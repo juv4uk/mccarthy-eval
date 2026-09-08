@@ -1,0 +1,10 @@
+(DEFINE FACT
+  (LABEL FACT
+    (LAMBDA (N)
+      (COND ((ZEROP N) 1)
+            (T (TIMES N (FACT (DIFFERENCE N 1))))))))
+
+(FACT 0)
+(FACT 1)
+(FACT 5)
+(FACT 10)

@@ -1,0 +1,4 @@
+# Скомпільовані бінарники -- перезбираються ./build.sh / ./build-kernel.sh,
+# не комітяться.
+mccarthy-eval
+mccarthy-kernel

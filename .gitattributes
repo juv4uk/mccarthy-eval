@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+# GitHub Linguist не знає розширення .lisp за замовчуванням для GNU asm
+# .s файлів окремо не потребує override -- Assembly вже рідна мова
+# Linguist. Явно позначаємо .lisp-файли канонічною назвою (не
+# псевдонімом -- дефіс обов'язковий за вимогою Linguist, псевдонім
+# "Lisp" без дефіса резолвиться статистикою байтів, але НЕ клікабельним
+# фільтром GitHub code search, підтверджено 2026-09-08 у сестринських
+# репозиторіях цієї екосистеми).
+*.lisp linguist-language=Common-Lisp linguist-detectable=true

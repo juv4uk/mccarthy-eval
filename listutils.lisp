@@ -1,0 +1,25 @@
+(DEFINE MYAPPEND
+  (LABEL MYAPPEND
+    (LAMBDA (X Y)
+      (COND ((EQ X NIL) Y)
+            (T (CONS (CAR X) (MYAPPEND (CDR X) Y)))))))
+
+(DEFINE MYREVERSE
+  (LABEL MYREVERSE
+    (LAMBDA (X)
+      (COND ((EQ X NIL) NIL)
+            (T (MYAPPEND (MYREVERSE (CDR X)) (CONS (CAR X) NIL)))))))
+
+(DEFINE PAIRUP
+  (LABEL PAIRUP
+    (LAMBDA (X) (CONS X X))))
+
+(DEFINE MYMAP
+  (LABEL MYMAP
+    (LAMBDA (F X)
+      (COND ((EQ X NIL) NIL)
+            (T (CONS (F (CAR X)) (MYMAP F (CDR X))))))))
+
+(MYAPPEND (QUOTE (A B)) (QUOTE (C D)))
+(MYREVERSE (QUOTE (A B C)))
+(MYMAP PAIRUP (QUOTE (A B C)))
