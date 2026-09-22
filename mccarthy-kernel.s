@@ -1028,6 +1028,187 @@ remflag_prim:                      /* rdi=symlist, rsi=ind -> NIL */
     pop     %r12
     ret
 
+/* array/STORE-equivalent (ст.27-28, "4.4 The Array Feature", verified
+ * by direct page-image read). Only the "LIST" array kind is
+ * implemented -- the manual itself says "non-list arrays are reserved
+ * for future developments of the LISP system", so LIST is the only
+ * kind that was ever real. Storage is an ordinary Lisp list of NIL
+ * cells (O(n) indexed access via cdr-walking), not a true packed
+ * vector -- a reconstruction-derived simplification: this kernel has
+ * no separate vector/array memory region distinct from cons cells,
+ * and the manual gives no observable behavior that would distinguish
+ * the two (arrays are never compared with EQUAL against a literal,
+ * only indexed). array[declarations] is architecturally top-level-
+ * only, exactly like DEFINE and for the identical reason: it must
+ * mutate global_env directly, and a nested eval call's local `a`
+ * parameter never observes a mid-flight global_env mutation from
+ * deeper in the same call chain -- only a fresh top-level eval
+ * (which re-reads global_env) would. An array name becomes callable
+ * the same way a DEFINE'd name does: bound in global_env to a value
+ * that .head_not_atom below (see .try_arrayobj) knows how to apply
+ * when plain_call reconstructs and re-evaluates the call. */
+dims_product:                      /* rdi=dims list -> rax=tagged fixnum */
+    push    %r12
+    mov     %rdi, %r12
+    cmp     $NIL_SYM, %r12
+    je      .dims_product_base
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    getfix
+    push    %rax
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    call    dims_product
+    mov     %rax, %rdi
+    call    getfix
+    pop     %rcx
+    imul    %rcx, %rax
+    mov     %rax, %rdi
+    call    mkfix
+    jmp     .dims_product_done
+.dims_product_base:
+    mov     $1, %rdi
+    call    mkfix
+.dims_product_done:
+    pop     %r12
+    ret
+
+make_nil_list:                     /* rdi=n (tagged fixnum) -> rax = list of n NIL_SYM */
+    push    %r12
+    push    %rbx
+    call    getfix
+    mov     %rax, %r12              /* r12 = raw counter */
+    mov     $NIL_SYM, %rbx          /* rbx = accumulator */
+.make_nil_list_loop:
+    test    %r12, %r12
+    jz      .make_nil_list_done
+    mov     $NIL_SYM, %rdi
+    mov     %rbx, %rsi
+    call    cons
+    mov     %rax, %rbx
+    dec     %r12
+    jmp     .make_nil_list_loop
+.make_nil_list_done:
+    mov     %rbx, %rax
+    pop     %rbx
+    pop     %r12
+    ret
+
+array_linear_index:                /* rdi=coords, rsi=dims -> rax=raw linear index (row-major) */
+    push    %r12
+    push    %r13
+    push    %r14
+    mov     %rdi, %r12              /* coords walking */
+    mov     %rsi, %r13              /* dims walking */
+    xor     %r14, %r14              /* r14 = raw accumulator */
+.ali_loop:
+    cmp     $NIL_SYM, %r12
+    je      .ali_done
+    mov     %r13, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    getfix
+    mov     %rax, %rcx              /* raw this-dim */
+    imul    %rcx, %r14
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    getfix                  /* raw this-coord */
+    add     %rax, %r14
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %r12
+    mov     %r13, %rdi
+    call    cdr
+    mov     %rax, %r13
+    jmp     .ali_loop
+.ali_done:
+    mov     %r14, %rax
+    pop     %r14
+    pop     %r13
+    pop     %r12
+    ret
+
+array_nth_node:                    /* rdi=list, rsi=raw_index -> rax = node at that position
+                                     * (or NIL_SYM if the index runs past the end -- car/cdr's
+                                     * own tag-check already makes this safe to keep walking) */
+    push    %r12
+    push    %r13
+    mov     %rdi, %r12
+    mov     %rsi, %r13
+.ann_loop:
+    test    %r13, %r13
+    jz      .ann_done
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %r12
+    dec     %r13
+    jmp     .ann_loop
+.ann_done:
+    mov     %r12, %rax
+    pop     %r13
+    pop     %r12
+    ret
+
+array_declare_one:                 /* rdi = (name dims LIST) -- mutates global_env */
+    push    %r12
+    push    %r13
+    push    %r14
+    push    %rbx
+    mov     %rdi, %r12              /* spec */
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %r13              /* name */
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %r14              /* dims */
+    mov     %r14, %rdi
+    call    dims_product
+    mov     %rax, %rdi
+    call    make_nil_list
+    mov     %rax, %rbx              /* storage */
+    mov     %r14, %rdi
+    mov     $NIL_SYM, %rsi
+    call    cons                    /* (dims) */
+    mov     %rax, %rsi
+    mov     %rbx, %rdi
+    call    cons                    /* (storage dims) */
+    mov     %rax, %rsi
+    mov     $ARRAYOBJ_SYM, %rdi
+    call    cons                    /* (ARRAYOBJ storage dims) */
+    mov     %rax, %rsi
+    mov     %r13, %rdi
+    call    cons                    /* (name . (ARRAYOBJ storage dims)) */
+    mov     %rax, %rdi
+    mov     global_env(%rip), %rsi
+    call    cons                    /* ((name.triple) . global_env) */
+    mov     %rax, global_env(%rip)
+    pop     %rbx
+    pop     %r14
+    pop     %r13
+    pop     %r12
+    ret
+
+array_declare_all:                 /* rdi = list of (name dims LIST) specs */
+    push    %r12
+    mov     %rdi, %r12
+.ada_loop:
+    cmp     $NIL_SYM, %r12
+    je      .ada_done
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    array_declare_one
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %r12
+    jmp     .ada_loop
+.ada_done:
+    pop     %r12
+    ret
+
 evlis:
     push    %r12
     push    %r13
@@ -2426,7 +2607,7 @@ eval:
      * captured environment, letting eval's own LABEL/LAMBDA dispatch
      * (above) do the actual application. */
     cmp     $FUNARG_SYM, %rax
-    jne     .try_compute_head
+    jne     .try_arrayobj
     mov     %r12, %rdi
     call    car                 /* (FUNARG innerfn captured_env) */
     mov     %rax, %rdi
@@ -2450,6 +2631,78 @@ eval:
     mov     %rax, %rdi
     pop     %rsi                /* captured_env */
     call    eval
+    jmp     .eval_done
+
+.try_arrayobj:
+    /* car[e] = (ARRAYOBJ storage dims), produced by array_declare_one
+     * and reached here via the same plain_call reconstruct-and-re-eval
+     * mechanism DEFINE'd names already use. First evaluated arg ==
+     * SET -> alpha[SET;x;i;j] mutates; otherwise -> alpha[i;j] fetches
+     * (ст.28). Out-of-bounds coordinates degrade gracefully (car/cdr's
+     * own tag-check already makes walking past NIL safe; the raw
+     * mutation write below is guarded the same way .try_rplaca/
+     * .try_rplacd already guard theirs). */
+    cmp     $ARRAYOBJ_SYM, %rax
+    jne     .try_compute_head
+    /* Only r12/r13/r14 used below -- eval's own prologue already
+     * saves/restores these three, and .eval_done restores them from
+     * the stack regardless of what they hold at the jump, so they can
+     * be freely repurposed here once e (r12) and env (r13) are no
+     * longer needed. One balanced push/pop carries "storage" across
+     * the evlis call, since that needs three live values (storage,
+     * dims, and e/env) at once and only two registers are free at
+     * that point. */
+    mov     %r12, %rdi
+    call    car                 /* triple = (ARRAYOBJ storage dims) */
+    mov     %rax, %r14          /* r14 = triple */
+    mov     %r14, %rdi
+    call    cadr                /* storage */
+    push    %rax                /* stack: [storage] */
+    mov     %r14, %rdi
+    call    caddr               /* dims */
+    mov     %rax, %r14          /* r14 = dims (triple no longer needed) */
+    mov     %r12, %rdi
+    call    cdr                 /* raw args (appq'd) */
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    evlis               /* evaluated args */
+    mov     %rax, %r13          /* r13 = evaluated args (e/env no longer needed) */
+    mov     %r13, %rdi
+    call    car                 /* first evaluated arg */
+    cmp     $SET_SYM, %rax
+    je      .arrayobj_set
+
+    mov     %r13, %rdi          /* GET: coords = evaluated args */
+    mov     %r14, %rsi          /* dims */
+    call    array_linear_index
+    mov     %rax, %rsi
+    pop     %rdi                /* storage */
+    call    array_nth_node
+    mov     %rax, %rdi
+    call    car
+    jmp     .eval_done
+
+.arrayobj_set:
+    mov     %r13, %rdi
+    call    cadr                /* new value */
+    mov     %rax, %r12          /* r12 = new value (e no longer needed) */
+    mov     %r13, %rdi
+    call    cddr                /* coordinates */
+    mov     %rax, %rdi
+    mov     %r14, %rsi          /* dims */
+    call    array_linear_index
+    mov     %rax, %rsi
+    pop     %rdi                /* storage */
+    call    array_nth_node
+    mov     %rax, %rdi          /* node */
+    push    %rdi
+    call    atomp
+    test    %rax, %rax
+    pop     %rdi
+    jnz     .arrayobj_set_oob
+    mov     %r12, (%rdi)        /* write new value into node's car */
+.arrayobj_set_oob:
+    mov     %r12, %rax          /* return the value regardless, matching RPLACA's convention */
     jmp     .eval_done
 
 .try_compute_head:
@@ -2942,6 +3195,8 @@ print_sexpr:
 .equ REMPROP_SYM,    217
 .equ FLAG_SYM,       221
 .equ REMFLAG_SYM,    225
+.equ ARRAY_SYM,      229
+.equ ARRAYOBJ_SYM,   233
 
     .text
 
@@ -3072,6 +3327,10 @@ main:
     call    intern
     lea     sym_REMFLAG(%rip), %rdi
     call    intern
+    lea     sym_ARRAY(%rip), %rdi
+    call    intern
+    lea     sym_ARRAYOBJ(%rip), %rdi
+    call    intern
 
     movq    $NIL_SYM, global_env(%rip)
 
@@ -3179,7 +3438,7 @@ process_buffer:
     mov     %rbx, %rdi
     call    car
     cmp     $DEFINE_SYM, %rax
-    jne     .pb_eval_plain
+    jne     .pb_try_array
 
     /* DEFINE binds name to the RAW, unevaluated form -- not eval[expr].
      * eval only recognizes LABEL/LAMBDA as the head of a call, never
@@ -3201,6 +3460,25 @@ process_buffer:
     call    cons                 /* ((name.value) . global_env) */
     mov     %rax, global_env(%rip)
     jmp     .pb_loop            /* DEFINE prints nothing; silent success */
+
+.pb_try_array:
+    /* is it (ARRAY specs)? -- ARRAY is top-level-only for the same
+     * architectural reason as DEFINE (ст.27-28, "4.4 The Array
+     * Feature"): it must mutate global_env directly, and a nested
+     * eval call's local `a` parameter never observes a mid-flight
+     * global_env mutation made deeper in the same call chain -- only
+     * a fresh top-level eval (which re-reads global_env) would.
+     * Prints nothing, matching DEFINE's own silent convention -- a
+     * reconstruction-derived, noted choice (the manual doesn't state
+     * a return value for array[...] itself), not a claimed
+     * historical fact. */
+    cmp     $ARRAY_SYM, %rax
+    jne     .pb_eval_plain
+    mov     %rbx, %rdi
+    call    cadr                 /* specs list */
+    mov     %rax, %rdi
+    call    array_declare_all
+    jmp     .pb_loop
 
 .pb_eval_plain:
     mov     %rbx, %rdi
@@ -3273,5 +3551,7 @@ sym_DEFLIST:    .asciz "DEFLIST"
 sym_REMPROP:    .asciz "REMPROP"
 sym_FLAG:       .asciz "FLAG"
 sym_REMFLAG:    .asciz "REMFLAG"
+sym_ARRAY:      .asciz "ARRAY"
+sym_ARRAYOBJ:   .asciz "ARRAYOBJ"
 
     .section .note.GNU-stack,"",@progbits

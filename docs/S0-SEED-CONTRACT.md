@@ -41,9 +41,10 @@ MEMBER APPEND MAPLIST PAIR SASSOC SEARCH REVERSE LENGTH COPY SUBLIS`.
 Algol-подібний program feature (ст.71, і головне -- канонічні приклади
 `LENGTH`/`REV` з "V. THE PROGRAM FEATURE" в основному тілі маніфесту,
 ст.29-30). `GET`/`DEFLIST`/`REMPROP`/`FLAG`/`REMFLAG`, property lists
-(ст.39-41, 58-59). Див. окремі розділи нижче.
+(ст.39-41, 58-59). `ARRAY`, "4.4 The Array Feature" (ст.27-28). Див.
+окремі розділи нижче.
 
-Разом: **57 іменованих символів**, кожен з provenance-цитатою на
+Разом: **59 іменованих символів**, кожен з provenance-цитатою на
 конкретну сторінку першоджерела. Жодна названа тут форма не
 претендує на Core 4 семантику.
 
@@ -183,6 +184,31 @@ property list ever receives a duplicated flag"); `remflag[l;ind]`
 Деталі, включно з повним журналом самокорекції -- `tests/appendix-b-
 proplists/PROVENANCE.md`.
 
+## `ARRAY` -- the Array Feature закрито (2026-09-23)
+
+"4.4 The Array Feature" (ст.27-28), перевірено напряму по зображенню
+сторінки. Реалізовано лише "LIST"-масиви -- маніфест сам каже, що
+не-LIST масиви "reserved for future developments of the LISP system",
+тобто LIST був єдиним видом, що колись реально існував. Storage --
+звичайний Lisp-список NIL-комірок (O(n) доступ через `cdr`), не
+справжній пакований вектор -- reconstruction-derived спрощення: цей
+kernel не має окремої пам'яті для векторів, і маніфест не дає жодної
+спостережуваної поведінки, яка б розрізняла ці два представлення.
+`array[...]` архітектурно top-level-only, точно як `DEFINE` і з тієї
+самої причини (мутація `global_env` напряму).
+
+**Реальна знахідка й самовиправлений баг**: перша версія обчислення
+лінійного індексу (`array_linear_index`) реально **зависала** на
+будь-якому масиві з 2+ вимірами -- `getfix` двічі викликався без
+попереднього перенесення значення `car` в `%rdi`, тому розпаковував
+СТАРИЙ вміст регістру (вказівник на список), а не щойно прочитану
+координату/розмір -- даючи сміттєвий "індекс" (адреса пам'яті, зсунута
+на 2 біти) і astronomically повільний, хоч технічно скінченний, обхід
+через `cdr`. Один ручний тест на 1D-масиві випадково "пройшов" (малий
+сміттєвий вказівник) ДО виправлення -- не доказ коректності, лише
+2D-тест реально виявив баг. Виправлено; перевірено на 1D/2D/3D.
+Деталі -- `tests/array-feature/PROVENANCE.md`.
+
 ## Реальна S0 evidence -- вже готова, не обіцянка
 
 `tests/closeout/run.sh` уже виробляє точно те, що `#42` просить
@@ -195,10 +221,11 @@ target CPU, binary hash, bootstrap transcript"):
   i5-6400);
 - binary SHA-256, перевірена на детермінованість (два незалежні
   білди дають identical hash);
-- повний прогін усіх десяти корпусів (McCarthy core, ISA-baseline,
+- повний прогін усіх одинадцяти корпусів (McCarthy core, ISA-baseline,
   LISP 1.5 hardware primitives, LISP 1.5 library functions, REPL
   diagnostics, Appendix B FUNCTION/FUNARG, Appendix B PROG/GO, reader
-  dotted-pairs, Appendix B property lists) двічі -- output-identity
+  dotted-pairs, Appendix B property lists, Array Feature) двічі --
+  output-identity
   доказ.
 
 Коли `core1.lisp` з'явиться в `my-lisp`, транскрипт його виконання
