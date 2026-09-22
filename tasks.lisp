@@ -48,6 +48,13 @@
      (context . "Issue #26: prove the historical source bundle has no hidden gaps, especially for the 1959 draft and later retrospective layers.")
      (description . "Re-downloaded AIM-008 (1959) directly and found the previous session's 'incomplete scan, only through page 8' claim is now outdated -- the current bitsavers mirror is 19 PDF pages, full body through page -17-, including page -15- (the actual original 1959 eval/apply/evcon/evlam) and the full errata text (including a previously-uncaptured subsq replacement formula). Transcribed the full 1959 formula and documented why it is a structurally different mechanism from 1960 (no appq, substitution-based binding instead of an environment alist) rather than an early version of the same formula -- see docs/correspondence/aim-008-1959-full-scan-eval-apply-2026-09-22.md. Pinned exact acquisition (URL + SHA-256) for History of Lisp (1979), which the ledger previously lacked. Verified the 1995 author-note page (p.18 of the Stanford reprint). Updated docs/SOURCE-LEDGER.md accordingly.")
      (done . "2026-09-22: source coverage gaps closed and acquisition pinned for AIM-008 (1959) and History of Lisp (1979).")))
+   ("HISTORICAL-FACILITY-FIDELITY-1" .
+    ((priority . 9.4)
+     (capabilities . (historical-provenance assembly x86-64 arithmetic))
+     (origin . owner)
+     (context . "Issue #27, follow-up to #22: bring adopted later historical facilities (DEFINE/PLUS/TIMES/DIFFERENCE/ZEROP) to source-faithful semantics, or explicitly mark narrowed behavior as deliberate rather than an open TODO.")
+     (description . "Reimplemented PLUS/TIMES as real n-ary folds (evlis + loop) in mccarthy-kernel.s's .try_plus/.try_times, matching LISP 1.5 SS4.2 pp.31-32 exactly -- n=2 reduces to the prior fixed-arity behavior, verified against demo.lisp/factorial.lisp/listutils.lisp (unchanged output) and the full #9 historical-core corpus (21/21, unaffected) and the ISA-baseline witness (still no gated extensions, static + QEMU/Conroe). DIFFERENCE/ZEROP already matched source, unchanged. DEFINE deliberately kept narrowed: the source's batch list-of-pairs form is a different calling convention from the current flat (DEFINE name expr), and adopting it would break every existing .lisp file in this repo for a capability nothing here needs -- recorded as a permanent, evidence-weighed decision, not unfinished work. New separate corpus: tests/historical-facility-extensions/ (10 fixtures), does not touch #9.")
+     (done . "2026-09-22: PLUS/TIMES made source-faithful n-ary; DEFINE's narrowing made explicit and permanent; new extension corpus added and verified end-to-end.")))
    ("DUAL-WITNESS-1" .
     ((priority . 8.8)
      (capabilities . (historical-witness compiler-witness differential))

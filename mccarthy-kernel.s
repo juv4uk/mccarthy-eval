@@ -555,28 +555,45 @@ eval:
     mov     $T_SYM, %rax
     jmp     .eval_done
 
+/* times[x1;...;xn] -- LISP 1.5 Programmer's Manual (1962), SS4.2 p.32:
+ * "is a function of any number of arguments, whose value is the
+ * product (with correct sign) of its arguments." Real n-ary fold, not
+ * the earlier hard-coded 2-argument version -- source-faithful now,
+ * not a documented narrowing (issue #27). evlis evaluates every
+ * argument first (matches evlis[cdr[e];a] used by every other
+ * multi-arg form in this evaluator); the fold itself needs no
+ * environment lookups, so a plain loop over already-evaluated fixnums
+ * is enough. n=2 reduces to exactly the previous fixed-arity behavior. */
 .try_times:
     cmp     $TIMES_SYM, %r14
     jne     .try_difference
+    push    %rbx
     mov     %r12, %rdi
-    call    cadr
+    call    cdr
     mov     %rax, %rdi
     mov     %r13, %rsi
-    call    eval
-    mov     %rax, %rdi
-    call    getfix
+    call    evlis
+    mov     %rax, %rbx
+    mov     $1, %rax
     push    %rax
-    mov     %r12, %rdi
-    call    caddr
-    mov     %rax, %rdi
-    mov     %r13, %rsi
-    call    eval
+.times_loop:
+    cmp     $NIL_SYM, %rbx
+    je      .times_done
+    mov     %rbx, %rdi
+    call    car
     mov     %rax, %rdi
     call    getfix
     pop     %rcx
-    imul    %rcx, %rax
-    mov     %rax, %rdi
+    imul    %rax, %rcx
+    push    %rcx
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+    jmp     .times_loop
+.times_done:
+    pop     %rdi
     call    mkfix
+    pop     %rbx
     jmp     .eval_done
 
 .try_difference:
@@ -603,28 +620,41 @@ eval:
     call    mkfix
     jmp     .eval_done
 
+/* plus[x1;...;xn] -- LISP 1.5 Programmer's Manual (1962), SS4.2 p.31:
+ * "is a function of any number of arguments whose value is the
+ * algebraic sum of the arguments." Same n-ary fold as times above,
+ * source-faithful now (issue #27); n=2 reduces to the previous
+ * fixed-arity behavior exactly. */
 .try_plus:
     cmp     $PLUS_SYM, %r14
     jne     .plain_call
+    push    %rbx
     mov     %r12, %rdi
-    call    cadr
+    call    cdr
     mov     %rax, %rdi
     mov     %r13, %rsi
-    call    eval
-    mov     %rax, %rdi
-    call    getfix
+    call    evlis
+    mov     %rax, %rbx
+    mov     $0, %rax
     push    %rax
-    mov     %r12, %rdi
-    call    caddr
-    mov     %rax, %rdi
-    mov     %r13, %rsi
-    call    eval
+.plus_loop:
+    cmp     $NIL_SYM, %rbx
+    je      .plus_done
+    mov     %rbx, %rdi
+    call    car
     mov     %rax, %rdi
     call    getfix
     pop     %rcx
-    add     %rcx, %rax
-    mov     %rax, %rdi
+    add     %rax, %rcx
+    push    %rcx
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+    jmp     .plus_loop
+.plus_done:
+    pop     %rdi
     call    mkfix
+    pop     %rbx
     jmp     .eval_done
 
 .plain_call:
