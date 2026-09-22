@@ -23,6 +23,7 @@ Hardware / ISA:
 Compiler / target:
 - docs/references/compiler/CML-X86-FREESTANDING.md
 - docs/references/compiler/CML-HISTORICAL-EVAL-APPLY-GAP.md
+- docs/references/compiler/CML-HISTORICAL-DIFFERENTIAL-CONTRACT.md
 - docs/references/target/WSM-X86-64-TARGET-CONTRACT.md
 
 Provenance:
@@ -66,11 +67,10 @@ Local snapshots у docs/references/ є convenience copies. Вони зберіг
 
 1959 draft, errata 1959, published form 1960 і пізні McCarthy retrospectives — різні evidence layers. Не змішувати їх у одну виправлену версію без явно записаної трансформації.
 
-
 ## Нова політика мовних функцій — 2026-09-22
 
 У реконструкції **кожна мовна функція або форма має historical provenance**. McCarthy 1960 є core layer; LISP I 1960 та LISP 1.5 є окремими historical facility layers. Modern machine/runtime machinery дозволена лише як implementation witness і не може вигадувати нову Lisp semantics.
 
-Див. `docs/HISTORICAL-FUNCTION-LEDGER.md` та issue #19 HISTORICAL-FUNCTIONS-1.
+Див. `docs/HISTORICAL-FUNCTION-LEDGER.md` та issue #22.
 
-Поточний unresolved feature: `ENV` не має зафіксованого historical source і тому не повинен рахуватися reconstructed language function без нового evidence.
+`ENV` **видалено з language surface**: для нього не знайдено достатнього historical provenance. Воно більше не рахується reconstructed Lisp function. Див. merged change #21.
