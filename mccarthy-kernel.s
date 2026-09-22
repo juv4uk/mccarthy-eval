@@ -36,6 +36,8 @@ fmt_prompt:
     .asciz "> "
 fname_startup:
     .asciz "startup.lisp"
+fmt_condition_unbound:
+    .asciz "CONDITION kind=UNBOUND name=%s\n"
 
 sym_NIL:    .asciz "NIL"
 sym_T:      .asciz "T"
@@ -1473,7 +1475,28 @@ eval:
     mov     %r13, %rsi
     call    assoc
     cmp     $NIL_SYM, %rax
-    je      .eval_done          /* unbound function name -> NIL, not a crash */
+    jne     .plain_call_found
+    /* Diagnostic only, added 2026-09-22 -- a stderr side-channel, not
+     * a semantic change. The VALUE returned to the running program is
+     * still NIL, byte-for-byte the same as before this line existed;
+     * this kernel keeps using the old Lisp's own value semantics
+     * (unbound atom -> NIL) exactly as already documented above.
+     * stdout (what every fixture's .expected compares against) is
+     * untouched -- this writes to stderr only, so #9's own
+     * 22-plain-call-unbound-function-no-crash.lisp still expects and
+     * gets NIL on stdout. Format inspired by wsm-os-lisp's own REPL
+     * condition-reporting convention (`CONDITION kind=... `), not
+     * copied from any Rust source -- this file stays pure asm. */
+    mov     %r14, %rdx
+    shr     $2, %rdx
+    mov     symtab(,%rdx,8), %rdx
+    mov     stderr(%rip), %rdi
+    lea     fmt_condition_unbound(%rip), %rsi
+    xor     %eax, %eax
+    call    fprintf
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+.plain_call_found:
     push    %rax
     mov     %r12, %rdi
     call    cdr
