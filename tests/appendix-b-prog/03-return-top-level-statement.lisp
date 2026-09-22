@@ -1,0 +1,1 @@
+(PROG (X) (SETQ X 42) (RETURN X))
