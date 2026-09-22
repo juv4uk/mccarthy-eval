@@ -59,8 +59,9 @@ def git_blob_sha(repo: Path, path: Path) -> str:
     return git(repo, "hash-object", str(path))
 
 
-def fixture_metadata(matrix_path: Path, fixture_base: str) -> tuple[str, str]:
+def fixture_metadata(matrix_path: Path, provenance_path: Path, fixture_base: str) -> tuple[str, str]:
     text = matrix_path.read_text(encoding="utf-8")
+    provenance_text = provenance_path.read_text(encoding="utf-8")
     matches = []
     for line in text.splitlines():
         if not line.startswith("|") or line.startswith("|---"):
@@ -81,9 +82,33 @@ def fixture_metadata(matrix_path: Path, fixture_base: str) -> tuple[str, str]:
             f"admission matrix must contain exactly one row for {fixture_base}, got {len(matches)}"
         )
 
-    provenance, status = matches[0]
+    _, status = matches[0]
+
+    provenance_matches = []
+    for line in provenance_text.splitlines():
+        if line.startswith("|") and fixture_base in line and "source-confirmed" in line or "reconstruction-derived witness" in line or "regression witness" in line:
+            provenance_matches.append(line)
+
+    if not provenance_matches:
+        raise RunnerError(f"historical provenance is not recorded for {fixture_base}")
+
+    provenance_labels = []
+    for line in provenance_matches:
+        if "source-confirmed" in line:
+            provenance_labels.append("source-confirmed")
+        if "reconstruction-derived witness" in line:
+            provenance_labels.append("reconstruction-derived witness")
+        if "regression witness" in line:
+            provenance_labels.append("regression witness")
+
+    provenance_labels = sorted(set(provenance_labels))
+    if len(provenance_labels) != 1:
+        raise RunnerError(
+            f"historical provenance for {fixture_base} is ambiguous: {provenance_labels}"
+        )
+
     return (
-        provenance,
+        provenance_labels[0],
         "blocked" if "**blocked" in status else "candidate",
     )
 
@@ -159,9 +184,10 @@ def main() -> int:
         raise RunnerError(f"missing x86 nucleus: {nucleus}")
 
     matrix = repo_root / "docs" / "references" / "compiler" / "CML-HISTORICAL-ADMISSION-MATRIX.md"
+    provenance = repo_root / "tests" / "historical-core" / "PROVENANCE.md"
     translations = repo_root / "tests" / "cml-bridge" / "TRANSLATIONS.md"
     driver_source = repo_root / "tests" / "cml-bridge" / "cml-witness-driver.rs"
-    if not matrix.is_file() or not translations.is_file() or not driver_source.is_file():
+    if not matrix.is_file() or not provenance.is_file() or not translations.is_file() or not driver_source.is_file():
         raise RunnerError("required CML bridge metadata/driver file is missing")
 
     with tempfile.TemporaryDirectory(prefix="mccarthy-cml-31-") as tmp:
@@ -210,7 +236,7 @@ cml = {{ path = {json.dumps(str(cml_repo))} }}
         records: list[dict[str, object]] = []
         for fixture in fixture_paths:
             fixture_base = fixture.stem
-            historical_provenance, matrix_status = fixture_metadata(matrix, fixture_base)
+            historical_provenance, matrix_status = fixture_metadata(matrix, provenance, fixture_base)
             fixture_sha = git_blob_sha(repo_root, fixture)
             historical = run([str(kernel), str(fixture)], cwd=repo_root)
             if historical.returncode != 0:
