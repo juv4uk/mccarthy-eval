@@ -660,10 +660,30 @@ eval:
 .plain_call:
     /* T -> eval[cons[assoc[car[e];a]; appq[evlis[cdr[e];a]]]; a]
      * (the appq[...] is the fix above -- 1960 paper's apply does
-     * this too, cons[f;appq[args]], for exactly this reason) */
+     * this too, cons[f;appq[args]], for exactly this reason)
+     *
+     * Real bug found and fixed 2026-09-22 (issue #28 follow-up, live
+     * testing after ENV's removal in #21): assoc's not-found case
+     * returns NIL_SYM -- the same sentinel this kernel already, and
+     * deliberately, uses to make unbound atoms self-evaluate to NIL
+     * (see the T/NIL self-evaluation comment in the atom branch
+     * above). Calling an unbound symbol as a function used to build
+     * cons[NIL_SYM;args] and re-eval it regardless; since NIL_SYM is
+     * itself unbound too, that new expression's own head resolves
+     * through this exact path again, producing the same expression
+     * forever -- unbounded recursion, stack overflow, segfault, not
+     * a clean result. (ENV) reproduced this directly once ENV.stopped
+     * being a recognized top-level form, but it was never
+     * ENV-specific: any typo'd or undefined function name in
+     * head position triggered it. Fix: if assoc found nothing,
+     * there is no function to call -- return NIL_SYM immediately,
+     * consistent with how this kernel already treats every other
+     * unbound-atom case, instead of trying to apply it. */
     mov     %r14, %rdi
     mov     %r13, %rsi
     call    assoc
+    cmp     $NIL_SYM, %rax
+    je      .eval_done          /* unbound function name -> NIL, not a crash */
     push    %rax
     mov     %r12, %rdi
     call    cdr

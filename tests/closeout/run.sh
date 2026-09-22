@@ -75,9 +75,9 @@ echo "--- Binary hash (round 1 build) ---"
 echo "mccarthy-kernel SHA-256: $hash_round1"
 echo
 
-run_gate "historical-core (#9, 21 fixtures)" "tests/historical-core/run.sh"
+run_gate "historical-core (#9)" "tests/historical-core/run.sh"
 run_gate "isa-baseline (#7 physical-execution criterion, static + QEMU/Conroe)" "tests/isa-baseline/check-isa-baseline.sh"
-run_gate "historical-facility-extensions (#27, 10 fixtures)" "tests/historical-facility-extensions/run.sh"
+run_gate "historical-facility-extensions (#27)" "tests/historical-facility-extensions/run.sh"
 
 # Round 2 -- prove determinism, not just single-run success
 echo "--- Determinism check: rebuild and rerun everything a second time ---"
