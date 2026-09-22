@@ -83,6 +83,8 @@ run_gate "lisp15-library-functions (#7 Фаза 2, Appendix A LABEL/LAMBDA libra
 run_gate "repl-diagnostics (CONDITION stderr side-channel, stdout semantics unchanged)" "tests/repl-diagnostics/run.sh"
 run_gate "appendix-b-funarg (#7 closures/FUNARG problem, Appendix B)" "tests/appendix-b-funarg/run.sh"
 run_gate "appendix-b-prog (#7 PROG/GO, Appendix B + main body)" "tests/appendix-b-prog/run.sh"
+run_gate "reader-dotted-pairs (#7 reader/printer asymmetry fix)" "tests/reader-dotted-pairs/run.sh"
+run_gate "appendix-b-proplists (#7 GET/DEFLIST/REMPROP)" "tests/appendix-b-proplists/run.sh"
 
 # Round 2 -- prove determinism, not just single-run success
 echo "--- Determinism check: rebuild and rerun everything a second time ---"
@@ -102,6 +104,8 @@ run_gate "lisp15-library-functions (round 2, output-identity check)" "tests/lisp
 run_gate "repl-diagnostics (round 2, output-identity check)" "tests/repl-diagnostics/run.sh"
 run_gate "appendix-b-funarg (round 2, output-identity check)" "tests/appendix-b-funarg/run.sh"
 run_gate "appendix-b-prog (round 2, output-identity check)" "tests/appendix-b-prog/run.sh"
+run_gate "reader-dotted-pairs (round 2, output-identity check)" "tests/reader-dotted-pairs/run.sh"
+run_gate "appendix-b-proplists (round 2, output-identity check)" "tests/appendix-b-proplists/run.sh"
 echo
 
 echo "--- Known regression witnesses covered by this closeout ---"
