@@ -32,7 +32,7 @@ cd "$(dirname "$0")"
 REPO_ROOT="$(cd ../.. && pwd)"
 CORPUS_DIR="$REPO_ROOT/tests/historical-core"
 
-gcc -no-pie -O0 -o "$REPO_ROOT/mccarthy-kernel" "$REPO_ROOT/mccarthy-kernel.s"
+gcc -no-pie -O0 -s -o "$REPO_ROOT/mccarthy-kernel" "$REPO_ROOT/mccarthy-kernel.s"
 
 DISASM="$(mktemp)"
 trap 'rm -f "$DISASM"' EXIT
