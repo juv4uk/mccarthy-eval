@@ -27,7 +27,7 @@ for fixture in *.lisp; do
     fail=$((fail + 1))
     continue
   fi
-  actual="$("$REPO_ROOT/mccarthy-kernel" "$fixture")"
+  actual="$(cd "$REPO_ROOT" && "$REPO_ROOT/mccarthy-kernel" "$OLDPWD/$fixture")"
   expected="$(cat "$expected_file")"
   if [[ "$actual" == "$expected" ]]; then
     echo "PASS  $fixture"
