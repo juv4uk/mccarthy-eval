@@ -1,0 +1,1 @@
+(CAR (CONS (QUOTE A) (QUOTE B)))
