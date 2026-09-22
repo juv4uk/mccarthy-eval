@@ -243,11 +243,42 @@ target CPU, binary hash, bootstrap transcript"):
    -- форма без відповідника тут або має окреме provenance-обґрунтування,
    або явно звітується як unsupported (не guess, не silent emulation).
 
-## Заблоковано, не моя робота
+## S0 реально виконує Core 1 -- empirically confirmed, 2026-09-23
 
-`core1.lisp` ще не існує ніде в `my-lisp` (перевірено напряму,
-2026-09-22). Визначення точного мовного підмножини Core 1 -- робота
-`my-lisp#1132` ("my-lisp remains the single semantic authority", за
-`ecosystem#15`). Цей seed готовий виконати `core1.lisp`, щойно він
-з'явиться -- жодних дій із мого боку до того часу, окрім цього
-readiness-контракту.
+`core1.lisp` більше не гіпотетичний. `my-lisp#1132` закрито; `lib/core1.lisp`,
+`tests/fixtures/core1-s0-witness.lisp` і CI workflow `.github/workflows/
+core1-s0.yml` злиті в `my-lisp` main (`ca219968`). Цей workflow **буквально
+завантажує та збирає цей репозиторій** на закріпленому коміті `1ae9745`
+(PR #47, `FUNCTION`/`FUNARG`) і виконує через нього справжній `core1.lisp`
+-- Core1's власний `LAMBDA` представлено через `(C1-CLOSURE params body
+lexical-env)`, транслюючись у наш `FUNARG`-механізм.
+
+Перевірено НЕ лише читанням CI YAML, а прямим локальним відтворенням
+(окрема scratch-копія `mccarthy-eval` на коміті `1ae9745`, зібрана
+тим самим `gcc -no-pie -O0 -s`, `lib/core1.lisp` +
+`core1-s0-witness.lisp` конкатеновані й подані на вхід):
+
+```
+HISTORICAL-FUNARG
+T
+(A . B)
+C
+(C1-ERROR UNBOUND VECTOR)
+```
+
+Точний збіг з очікуваним значенням у CI. Другий, глибший тест
+(S0→S1→S2: `core1.lisp` виконує `wsm-my-lisp`'s `compiler.lisp` на
+закріпленому коміті `a6bd9747`) також відтворено локально й дав
+точний очікуваний результат `(var FOO)`.
+
+Жодних змін до асемблера не знадобилось -- Core1 навмисно
+використовує лише історичну S0-поверхню (`lib/core1.lisp`'s власний
+коментар: "no new assembler semantics are requested", "first-class
+closure capture is represented as ordinary Lisp data"). Межа
+збережена: `mccarthy-eval` лишається historical reconstruction/
+witness, не стає my-lisp semantic authority -- `my-lisp#1132`
+сформулював і реалізував Core1's мовну семантику сам, цей репозиторій
+лише виконує її на реальному залізі.
+
+`ecosystem#15`'s S0→S5 драбина тепер має робочий, empirically
+підтверджений перший крок.
