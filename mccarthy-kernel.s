@@ -705,15 +705,25 @@ prog_setvar:                      /* rdi=var, rsi=val, rdx=env */
  * lists) -- only the general, user-visible GET/DEFLIST/REMPROP
  * facility itself.
  *
- * Reconstruction-derived correction, not a blind transcription: the
- * scanned image's own get[x;y] recursive step reads as
- * "get[cdr[x];y]" -- but a single cdr cannot be correct for a flat
- * alternating list (the very next car would be a VALUE, not an
- * indicator, on the following call). Implemented as get[cddr[x];y]
- * instead, the only structurally consistent reading, cross-checked
- * against the manual's own flat-list property diagrams and its
- * neighbouring prop[x;y;u] formula (which correctly uses a single
- * cdr for ITS OWN, different, one-step-at-a-time list scan). */
+ * CORRECTED 2026-09-22, after shipping this in PR #49: get[x;y]'s own
+ * recursive step is a single cdr, exactly as scanned -- get[cdr[x];y],
+ * NOT get[cddr[x];y] as this kernel first (wrongly) implemented it.
+ * The original reasoning ("a single cdr would compare a VALUE against
+ * an indicator on the next call") assumed every property list entry
+ * is a strict (indicator value) pair -- true for DEFLIST's own
+ * entries, but not for a FLAG (a bare indicator with no value
+ * following it, ст.59: "an indicator on a property list that does
+ * not have a property following it is called a flag"). A single-cdr
+ * scan handles both uniformly: it just walks one cell at a time
+ * looking for the first occurrence of the target indicator and
+ * returns whatever comes right after it (cadr) -- correct whether
+ * that occurrence sits at an even or odd position, i.e. regardless of
+ * how many flags or pairs came before it. A cddr-stepping scan is
+ * only correct if EVERY entry is a 2-element pair, which flag/remflag
+ * (below) breaks by design. Found while reasoning through how to
+ * implement flag/remflag correctly -- the bug had not yet been
+ * exercised by any GET/DEFLIST-only fixture, since those never mix
+ * flags into a plist. */
 get_prim:                          /* rdi=symbol, rsi=indicator */
     mov     %rdi, %rdx
     shr     $2, %rdx
@@ -733,7 +743,7 @@ get_prim_walk:                     /* rdi=plist, rsi=indicator */
     cmp     %r13, %rax
     je      .get_prim_walk_found
     mov     %r12, %rdi
-    call    cddr
+    call    cdr
     mov     %rax, %r12
     jmp     .get_prim_walk_loop
 .get_prim_walk_found:
@@ -869,6 +879,151 @@ remprop_filter:                    /* rdi=plist, rsi=indicator -> filtered plist
 .remprop_filter_base:
     mov     $NIL_SYM, %rax
 .remprop_filter_done:
+    pop     %r13
+    pop     %r12
+    ret
+
+/* flag[l;ind]/remflag[l;ind] (ст.59) -- a flag is "an indicator on a
+ * property list that does not have a property following it". flag
+ * puts a bare indicator (a single element, not an (indicator value)
+ * pair) onto the front of every symbol's plist in the list l, unless
+ * it is already there ("no property list ever receives a duplicated
+ * flag"); remflag removes all such bare occurrences. This is exactly
+ * why get_prim_walk above was corrected to a single-cdr scan: a
+ * cddr-stepping scan would misalign against a plist that mixes flags
+ * (1 element) with ordinary (indicator value) pairs (2 elements). */
+plist_member_prim:                 /* rdi=plist, rsi=target -> 1/0 */
+    push    %r12
+    push    %r13
+    mov     %rdi, %r12
+    mov     %rsi, %r13
+.plist_member_loop:
+    cmp     $NIL_SYM, %r12
+    je      .plist_member_no
+    mov     %r12, %rdi
+    call    car
+    cmp     %r13, %rax
+    je      .plist_member_yes
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %r12
+    jmp     .plist_member_loop
+.plist_member_yes:
+    mov     $1, %eax
+    jmp     .plist_member_done
+.plist_member_no:
+    xor     %eax, %eax
+.plist_member_done:
+    pop     %r13
+    pop     %r12
+    ret
+
+flag_prim:                         /* rdi=symlist, rsi=ind -> NIL */
+    push    %r12
+    push    %r13
+    push    %r14
+    mov     %rdi, %r12
+    mov     %rsi, %r13
+.flag_loop:
+    cmp     $NIL_SYM, %r12
+    je      .flag_done
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %r14              /* r14 = s */
+    mov     %r14, %rdx
+    shr     $2, %rdx
+    mov     proplist_table(,%rdx,8), %rdi
+    mov     %r13, %rsi
+    call    plist_member_prim
+    test    %rax, %rax
+    jnz     .flag_advance           /* already flagged -- no duplicate */
+    mov     %r14, %rdx
+    shr     $2, %rdx
+    mov     proplist_table(,%rdx,8), %rsi
+    mov     %r13, %rdi
+    call    cons                    /* (ind . plist) */
+    mov     %r14, %rdx
+    shr     $2, %rdx
+    mov     %rax, proplist_table(,%rdx,8)
+.flag_advance:
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %r12
+    jmp     .flag_loop
+.flag_done:
+    mov     $NIL_SYM, %rax
+    pop     %r14
+    pop     %r13
+    pop     %r12
+    ret
+
+remflag_filter:                    /* rdi=plist, rsi=ind -> filtered plist,
+                                     * removes ONE element per match (a flag
+                                     * has no following value to remove with
+                                     * it, unlike remprop_filter above) */
+    push    %r12
+    push    %r13
+    mov     %rdi, %r12
+    mov     %rsi, %r13
+    cmp     $NIL_SYM, %r12
+    je      .remflag_filter_base
+    mov     %r12, %rdi
+    call    car
+    cmp     %r13, %rax
+    je      .remflag_filter_skip
+    mov     %r12, %rdi
+    call    car
+    push    %rax
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    remflag_filter
+    mov     %rax, %rsi
+    pop     %rdi
+    call    cons
+    jmp     .remflag_filter_done
+.remflag_filter_skip:
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    remflag_filter
+    jmp     .remflag_filter_done
+.remflag_filter_base:
+    mov     $NIL_SYM, %rax
+.remflag_filter_done:
+    pop     %r13
+    pop     %r12
+    ret
+
+remflag_prim:                      /* rdi=symlist, rsi=ind -> NIL */
+    push    %r12
+    push    %r13
+    push    %r14
+    mov     %rdi, %r12
+    mov     %rsi, %r13
+.remflag_loop:
+    cmp     $NIL_SYM, %r12
+    je      .remflag_done
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %r14
+    mov     %r14, %rdx
+    shr     $2, %rdx
+    mov     proplist_table(,%rdx,8), %rdi
+    mov     %r13, %rsi
+    call    remflag_filter
+    mov     %r14, %rdx
+    shr     $2, %rdx
+    mov     %rax, proplist_table(,%rdx,8)
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %r12
+    jmp     .remflag_loop
+.remflag_done:
+    mov     $NIL_SYM, %rax
+    pop     %r14
     pop     %r13
     pop     %r12
     ret
@@ -1529,7 +1684,7 @@ eval:
 
 .try_remprop:
     cmp     $REMPROP_SYM, %r14
-    jne     .try_minus
+    jne     .try_flag
     mov     %r12, %rdi
     call    cadr
     mov     %rax, %rdi
@@ -1544,6 +1699,44 @@ eval:
     mov     %rax, %rsi
     pop     %rdi
     call    remprop_prim
+    jmp     .eval_done
+
+.try_flag:
+    cmp     $FLAG_SYM, %r14
+    jne     .try_remflag
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rsi
+    pop     %rdi
+    call    flag_prim
+    jmp     .eval_done
+
+.try_remflag:
+    cmp     $REMFLAG_SYM, %r14
+    jne     .try_minus
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rsi
+    pop     %rdi
+    call    remflag_prim
     jmp     .eval_done
 
 .try_minus:
@@ -2747,6 +2940,8 @@ print_sexpr:
 .equ GET_SYM,        209
 .equ DEFLIST_SYM,    213
 .equ REMPROP_SYM,    217
+.equ FLAG_SYM,       221
+.equ REMFLAG_SYM,    225
 
     .text
 
@@ -2872,6 +3067,10 @@ main:
     lea     sym_DEFLIST(%rip), %rdi
     call    intern
     lea     sym_REMPROP(%rip), %rdi
+    call    intern
+    lea     sym_FLAG(%rip), %rdi
+    call    intern
+    lea     sym_REMFLAG(%rip), %rdi
     call    intern
 
     movq    $NIL_SYM, global_env(%rip)
@@ -3072,5 +3271,7 @@ sym_SET:        .asciz "SET"
 sym_GET:        .asciz "GET"
 sym_DEFLIST:    .asciz "DEFLIST"
 sym_REMPROP:    .asciz "REMPROP"
+sym_FLAG:       .asciz "FLAG"
+sym_REMFLAG:    .asciz "REMFLAG"
 
     .section .note.GNU-stack,"",@progbits
