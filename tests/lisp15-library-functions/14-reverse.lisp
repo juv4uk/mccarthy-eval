@@ -1,0 +1,1 @@
+(REVERSE (QUOTE (A B C D)))
