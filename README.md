@@ -1,6 +1,7 @@
 # mccarthy-eval — eval/apply Маккарті 1960 р. у справжньому x86_64 асемблері
 
 **Поточна локальна точка входу:** docs/CURRENT.md  
+**Довідник усіх функцій простою українською:** docs/FUNCTION-GUIDE-UA.md  
 **Локальний пакет джерел:** docs/references/SOURCE-BUNDLE.md  
 **Hardware snapshot:** docs/references/hardware/OWNER-HARDWARE-PROFILE.md  
 **Compiler/target snapshots:** docs/references/compiler/ і docs/references/target/
