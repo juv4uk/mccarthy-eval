@@ -38,6 +38,10 @@ fname_startup:
     .asciz "startup.lisp"
 fmt_condition_unbound:
     .asciz "CONDITION kind=UNBOUND name=%s\n"
+fmt_condition_setq_unbound:
+    .asciz "CONDITION kind=SETQ-UNBOUND name=%s\n"
+fmt_condition_go_notfound:
+    .asciz "CONDITION kind=GO-LABEL-NOT-FOUND name=%s\n"
 
 sym_NIL:    .asciz "NIL"
 sym_T:      .asciz "T"
@@ -331,6 +335,348 @@ append:
     pop     %r12
     ret
 
+/* prog_feature/prog_cond/prog_find_label/prog_setvar -- the PROG
+ * feature (Appendix B ст.71 + the canonical worked LENGTH/REV
+ * examples in the main body, "V. THE PROGRAM FEATURE", ст.29-30,
+ * both verified by direct page-image read). PROG's statement list
+ * is not evaluated by plain recursive descent like every other form
+ * in this kernel -- it needs a genuine sequential walk with jumps,
+ * so this is a real loop over a "current statement" pointer, not a
+ * fold. GO re-scans the body from the start on every jump rather
+ * than using the real system's own internal go-list cache -- a
+ * reconstruction-derived equivalent (same precedent already used for
+ * PAIR/REVERSE, rewritten from the source's own PROG/GO form into
+ * direct recursion): identical observable behaviour, simpler control
+ * flow, no new data structure. */
+prog_feature:                     /* rdi = cdr[e] = (vars stmt...), rsi = a */
+    push    %r12
+    push    %r13
+    push    %r14
+    push    %r15
+    push    %rbx
+    mov     %rdi, %r12
+    mov     %rsi, %r14            /* r14 = new_env, starts as a */
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %r13            /* r13 = vars (walking, setup only) */
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rbx            /* rbx = body (FIXED, for GO rescans) */
+    mov     %rax, %r15            /* r15 = cur (current statement ptr) */
+
+.prog_bind_vars:
+    cmp     $NIL_SYM, %r13
+    je      .prog_bind_done
+    mov     %r13, %rdi
+    call    car
+    mov     %rax, %rdi
+    mov     $NIL_SYM, %rsi
+    call    cons                  /* (v . NIL) -- program vars start at NIL */
+    mov     %rax, %rdi
+    mov     %r14, %rsi
+    call    cons                  /* ((v . NIL) . new_env) */
+    mov     %rax, %r14
+    mov     %r13, %rdi
+    call    cdr
+    mov     %rax, %r13
+    jmp     .prog_bind_vars
+.prog_bind_done:
+
+.prog_main_loop:
+    cmp     $NIL_SYM, %r15
+    je      .prog_return_nil      /* ran out of statements -> NIL */
+    mov     %r15, %rdi
+    call    car
+    mov     %rax, %r12            /* r12 = stmt (prog_cdr no longer needed) */
+    mov     %r12, %rdi
+    call    atomp
+    test    %rax, %rax
+    jz      .prog_stmt_compound
+    /* atomic top-level entry = a label -- inert when reached in
+     * sequence, just skip past it */
+    mov     %r15, %rdi
+    call    cdr
+    mov     %rax, %r15
+    jmp     .prog_main_loop
+
+.prog_stmt_compound:
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %r13            /* r13 = head (stable across calls below) */
+
+    cmp     $RETURN_SYM, %r13
+    jne     .prog_try_go
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r14, %rsi
+    call    eval
+    jmp     .prog_done            /* rax already holds the return value */
+
+.prog_try_go:
+    cmp     $GO_SYM, %r13
+    jne     .prog_try_setq
+    mov     %r12, %rdi
+    call    cadr                  /* target label, raw/unevaluated */
+    mov     %rax, %rdi
+    mov     %rbx, %rsi
+    call    prog_find_label
+    mov     %rax, %r15
+    jmp     .prog_main_loop
+
+.prog_try_setq:
+    cmp     $SETQ_SYM, %r13
+    jne     .prog_try_set
+    mov     %r12, %rdi
+    call    cadr                  /* var, raw/unevaluated (SETQ quotes it) */
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r14, %rsi
+    call    eval
+    mov     %rax, %rsi
+    pop     %rdi
+    mov     %r14, %rdx
+    call    prog_setvar
+    mov     %r15, %rdi
+    call    cdr
+    mov     %rax, %r15
+    jmp     .prog_main_loop
+
+.prog_try_set:
+    cmp     $SET_SYM, %r13
+    jne     .prog_try_cond
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r14, %rsi
+    call    eval                  /* SET evaluates its first arg too */
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r14, %rsi
+    call    eval
+    mov     %rax, %rsi
+    pop     %rdi
+    mov     %r14, %rdx
+    call    prog_setvar
+    mov     %r15, %rdi
+    call    cdr
+    mov     %rax, %r15
+    jmp     .prog_main_loop
+
+.prog_try_cond:
+    cmp     $COND_SYM, %r13
+    jne     .prog_ordinary_stmt
+    /* COND at the top level of a PROG has two peculiarities (ст.71):
+     * (a) GO may appear as a clause's value part, jumping instead of
+     * evaluating; (b) running out of clauses is NOT an error here --
+     * the PROG just continues with its next statement. */
+    mov     %r15, %rdi
+    call    cdr                   /* fallthrough_cur = cdr[cur] */
+    push    %rax
+    mov     %r12, %rdi
+    call    cdr                   /* clauses = cdr[stmt] */
+    mov     %rax, %rdi
+    mov     %r14, %rsi
+    mov     %rbx, %rdx
+    pop     %rcx
+    call    prog_cond             /* rax=0 -> keep looping, cur in rdx;
+                                    * rax=1 -> the whole PROG returns,
+                                    * value in rdx (RETURN inside a
+                                    * top-level COND clause -- the
+                                    * manual's own LENGTH example) */
+    test    %rax, %rax
+    jnz     .prog_cond_returned
+    mov     %rdx, %r15
+    jmp     .prog_main_loop
+.prog_cond_returned:
+    mov     %rdx, %rax
+    jmp     .prog_done
+
+.prog_ordinary_stmt:
+    /* "Executing a statement means evaluating it with the current
+     * a-list and ignoring its value" (ст.30) */
+    mov     %r12, %rdi
+    mov     %r14, %rsi
+    call    eval
+    mov     %r15, %rdi
+    call    cdr
+    mov     %rax, %r15
+    jmp     .prog_main_loop
+
+.prog_return_nil:
+    mov     $NIL_SYM, %rax
+
+.prog_done:
+    pop     %rbx
+    pop     %r15
+    pop     %r14
+    pop     %r13
+    pop     %r12
+    ret
+
+prog_cond:                        /* rdi=clauses, rsi=new_env, rdx=body, rcx=fallthrough_cur
+                                    * returns: rax=0/rdx=next-cur, or
+                                    * rax=1/rdx=prog's-final-value */
+    push    %r12
+    push    %r13
+    push    %r14
+    push    %r15
+    push    %rbx
+    mov     %rdi, %r12
+    mov     %rsi, %r13
+    mov     %rdx, %r14
+    mov     %rcx, %r15
+.prog_cond_loop:
+    cmp     $NIL_SYM, %r12
+    je      .prog_cond_fallthrough
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %rbx            /* rbx = clause */
+    mov     %rbx, %rdi
+    call    car                   /* pred = car[clause] */
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    cmp     $NIL_SYM, %rax
+    je      .prog_cond_next
+    mov     %rbx, %rdi
+    call    cadr                  /* valpart = cadr[clause] */
+    mov     %rax, %rbx            /* rbx = valpart now */
+    mov     %rbx, %rdi
+    call    atomp
+    test    %rax, %rax
+    jnz     .prog_cond_eval_valpart
+    mov     %rbx, %rdi
+    call    car
+    mov     %rax, %r8             /* head of valpart (scratch, no calls before use) */
+    cmp     $GO_SYM, %r8
+    je      .prog_cond_do_go
+    cmp     $RETURN_SYM, %r8
+    je      .prog_cond_do_return
+    jmp     .prog_cond_eval_valpart
+.prog_cond_do_go:
+    /* the ONLY documented placement for GO besides a PROG's own top
+     * level (ст.71, rule 5b) */
+    mov     %rbx, %rdi
+    call    cadr                  /* target label */
+    mov     %rax, %rdi
+    mov     %r14, %rsi
+    call    prog_find_label
+    mov     %rax, %rdx
+    xor     %eax, %eax
+    jmp     .prog_cond_done
+.prog_cond_do_return:
+    /* not in the appendix's own placement rule for GO, but the
+     * manual's own canonical LENGTH example (ст.29-30) uses exactly
+     * this -- (COND ((NULL U) (RETURN V))) -- so a top-level PROG
+     * COND must also recognize RETURN in its value part, ending the
+     * whole PROG, not merely evaluating (RETURN V) as an ordinary,
+     * unrecognized call. */
+    mov     %rbx, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdx
+    mov     $1, %eax
+    jmp     .prog_cond_done
+.prog_cond_eval_valpart:
+    mov     %rbx, %rdi
+    mov     %r13, %rsi
+    call    eval                  /* discard value -- it's a statement */
+    mov     %r15, %rdx
+    xor     %eax, %eax
+    jmp     .prog_cond_done
+.prog_cond_next:
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %r12
+    jmp     .prog_cond_loop
+.prog_cond_fallthrough:
+    mov     %r15, %rdx
+    xor     %eax, %eax
+.prog_cond_done:
+    pop     %rbx
+    pop     %r15
+    pop     %r14
+    pop     %r13
+    pop     %r12
+    ret
+
+prog_find_label:                  /* rdi=target, rsi=body */
+    push    %r12
+    push    %rbx
+    mov     %rdi, %rbx             /* rbx = target */
+    mov     %rsi, %r12             /* r12 = walking list pointer */
+.prog_find_label_loop:
+    cmp     $NIL_SYM, %r12
+    je      .prog_find_label_notfound
+    mov     %r12, %rdi
+    call    car
+    push    %rax                   /* save item across the atomp call */
+    mov     %rax, %rdi
+    call    atomp
+    pop     %rdi                   /* item back into rdi */
+    test    %rax, %rax
+    jz      .prog_find_label_advance
+    cmp     %rbx, %rdi
+    jne     .prog_find_label_advance
+    mov     %r12, %rdi
+    call    cdr                    /* found -- return the remainder */
+    jmp     .prog_find_label_done
+.prog_find_label_advance:
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %r12
+    jmp     .prog_find_label_loop
+.prog_find_label_notfound:
+    /* Real error A6 in the historical system ("GO refers to a
+     * nonexistent location"). Graceful here, not a crash: report on
+     * stderr and fall off the end (PROG returns NIL), matching every
+     * other uncallable/unbound case in this kernel. */
+    mov     %rbx, %rdx
+    shr     $2, %rdx
+    mov     symtab(,%rdx,8), %rdx
+    mov     stderr(%rip), %rdi
+    lea     fmt_condition_go_notfound(%rip), %rsi
+    xor     %eax, %eax
+    call    fprintf
+    mov     $NIL_SYM, %rax
+.prog_find_label_done:
+    pop     %rbx
+    pop     %r12
+    ret
+
+prog_setvar:                      /* rdi=var, rsi=val, rdx=env */
+.prog_setvar_loop:
+    cmp     $NIL_SYM, %rdx
+    je      .prog_setvar_notfound
+    mov     (%rdx), %rcx           /* pair = car[env-node] */
+    mov     (%rcx), %r8            /* key = car[pair] */
+    cmp     %r8, %rdi
+    je      .prog_setvar_found
+    mov     8(%rdx), %rdx          /* advance to cdr[env-node] */
+    jmp     .prog_setvar_loop
+.prog_setvar_found:
+    mov     %rsi, 8(%rcx)          /* mutate cdr[pair] in place */
+    ret
+.prog_setvar_notfound:
+    /* Real error A4/A5 in the historical system ("SETQ given on
+     * nonexistent program variable"). Graceful here: report and
+     * silently no-op, same posture as prog_find_label above. */
+    mov     %rdi, %rdx
+    shr     $2, %rdx
+    mov     symtab(,%rdx,8), %rdx
+    mov     stderr(%rip), %rdi
+    lea     fmt_condition_setq_unbound(%rip), %rsi
+    xor     %eax, %eax
+    call    fprintf
+    ret
+
 evlis:
     push    %r12
     push    %r13
@@ -501,7 +847,7 @@ eval:
      * the real formula exactly (fn is typically a raw (LAMBDA ...)
      * or (LABEL name (LAMBDA ...)) expression, not a value). */
     cmp     $FUNCTION_SYM, %r14
-    jne     .try_atom
+    jne     .try_prog
     mov     %r12, %rdi
     call    cadr
     push    %rax
@@ -514,6 +860,23 @@ eval:
     mov     %rax, %rsi
     mov     $FUNARG_SYM, %rdi
     call    cons
+    jmp     .eval_done
+
+.try_prog:
+    /* eq[car[form];PROG] -> prog[cdr[form];a] (Appendix B, ст.71,
+     * and the canonical worked example in the main body, "V. THE
+     * PROGRAM FEATURE", ст.29-30 -- both verified by direct
+     * page-image read). PROG/GO/RETURN/SETQ/SET are all handled
+     * inside prog_feature itself, not as general eval special forms
+     * -- the manual is explicit these are "peculiar to prog", never
+     * meaningful outside one. */
+    cmp     $PROG_SYM, %r14
+    jne     .try_atom
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    prog_feature
     jmp     .eval_done
 
 .try_atom:
@@ -2058,6 +2421,11 @@ print_sexpr:
 .equ LEFTSHIFT_SYM,  177
 .equ FUNCTION_SYM,   181
 .equ FUNARG_SYM,     185
+.equ PROG_SYM,       189
+.equ GO_SYM,         193
+.equ RETURN_SYM,     197
+.equ SETQ_SYM,       201
+.equ SET_SYM,        205
 
     .text
 
@@ -2167,6 +2535,16 @@ main:
     lea     sym_FUNCTION(%rip), %rdi
     call    intern
     lea     sym_FUNARG(%rip), %rdi
+    call    intern
+    lea     sym_PROG(%rip), %rdi
+    call    intern
+    lea     sym_GO(%rip), %rdi
+    call    intern
+    lea     sym_RETURN(%rip), %rdi
+    call    intern
+    lea     sym_SETQ(%rip), %rdi
+    call    intern
+    lea     sym_SET(%rip), %rdi
     call    intern
 
     movq    $NIL_SYM, global_env(%rip)
@@ -2359,5 +2737,10 @@ sym_LOGXOR:     .asciz "LOGXOR"
 sym_LEFTSHIFT:  .asciz "LEFTSHIFT"
 sym_FUNCTION:   .asciz "FUNCTION"
 sym_FUNARG:     .asciz "FUNARG"
+sym_PROG:       .asciz "PROG"
+sym_GO:         .asciz "GO"
+sym_RETURN:     .asciz "RETURN"
+sym_SETQ:       .asciz "SETQ"
+sym_SET:        .asciz "SET"
 
     .section .note.GNU-stack,"",@progbits

@@ -1,0 +1,1 @@
+(PROG (X) (GO NOWHERE))

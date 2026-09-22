@@ -1,0 +1,11 @@
+(DEFINE LENGTH
+  (LAMBDA (L)
+    (PROG (U V)
+      (SETQ V 0)
+      (SETQ U L)
+      A (COND ((NULL U) (RETURN V)))
+      (SETQ U (CDR U))
+      (SETQ V (ADD1 V))
+      (GO A))))
+(LENGTH (QUOTE (A B C D)))
+(LENGTH (QUOTE ((X Y) A CAR (N B) (X Y Z))))
