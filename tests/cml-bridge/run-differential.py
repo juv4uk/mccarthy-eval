@@ -86,7 +86,18 @@ def fixture_metadata(matrix_path: Path, provenance_path: Path, fixture_base: str
 
     provenance_matches = []
     for line in provenance_text.splitlines():
-        if line.startswith("|") and fixture_base in line and "source-confirmed" in line or "reconstruction-derived witness" in line or "regression witness" in line:
+        if (
+            line.startswith("|")
+            and fixture_base in line
+            and any(
+                label in line
+                for label in (
+                    "source-confirmed",
+                    "reconstruction-derived witness",
+                    "regression witness",
+                )
+            )
+        ):
             provenance_matches.append(line)
 
     if not provenance_matches:
