@@ -41,6 +41,13 @@
      (context . "Follow-up to HISTORICAL-FUNCTIONS-1/#19 (issue #22): pin exact manual edition/date and page/section for PLUS/TIMES/DIFFERENCE/ZEROP/DEFINE, and verify current semantics against the source, not just the name.")
      (description . "Downloaded and read LISP I Programmer's Manual (MIT, 1 Mar 1960, bitsavers/archive.org) and LISP 1.5 Programmer's Manual (1962, softwarepreservation.computerhistory.org) directly, page by page. Found and corrected a real name-match error: PLUS/TIMES were previously attributed to LISP I 1960, but that manual has no general numeric PLUS/TIMES at all (only sum/prdct/expt, floating-point only) -- PLUS/TIMES/DIFFERENCE/ZEROP all actually come from LISP 1.5 (1962) SS4.2, pp.31-32. DEFINE confirmed at LISP I 1960 SS3.1, pp.23-24, with a real semantic narrowing documented (source: list-of-pairs batch definition; current: one name per call). See docs/HISTORICAL-FUNCTION-LEDGER.md and docs/HISTORICAL-BOUNDARY.md.")
      (done . "2026-09-22: exact citations pinned, PLUS/TIMES misattribution corrected, DEFINE/PLUS/TIMES/DIFFERENCE/ZEROP semantics compared against primary sources.")))
+   ("RECON-05" .
+    ((priority . 9.3)
+     (capabilities . (historical-provenance acquisition bibliography lisp-1959))
+     (origin . owner)
+     (context . "Issue #26: prove the historical source bundle has no hidden gaps, especially for the 1959 draft and later retrospective layers.")
+     (description . "Re-downloaded AIM-008 (1959) directly and found the previous session's 'incomplete scan, only through page 8' claim is now outdated -- the current bitsavers mirror is 19 PDF pages, full body through page -17-, including page -15- (the actual original 1959 eval/apply/evcon/evlam) and the full errata text (including a previously-uncaptured subsq replacement formula). Transcribed the full 1959 formula and documented why it is a structurally different mechanism from 1960 (no appq, substitution-based binding instead of an environment alist) rather than an early version of the same formula -- see docs/correspondence/aim-008-1959-full-scan-eval-apply-2026-09-22.md. Pinned exact acquisition (URL + SHA-256) for History of Lisp (1979), which the ledger previously lacked. Verified the 1995 author-note page (p.18 of the Stanford reprint). Updated docs/SOURCE-LEDGER.md accordingly.")
+     (done . "2026-09-22: source coverage gaps closed and acquisition pinned for AIM-008 (1959) and History of Lisp (1979).")))
    ("DUAL-WITNESS-1" .
     ((priority . 8.8)
      (capabilities . (historical-witness compiler-witness differential))
