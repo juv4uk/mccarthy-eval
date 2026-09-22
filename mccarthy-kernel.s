@@ -64,6 +64,16 @@ symtab:                     /* array of pointers to interned name strings */
 symtab_count:
     .skip 8
 
+proplist_table:             /* one property-list head per symbol, index-parallel
+                              * to symtab (Appendix B ст.58-59, GET/DEFLIST/
+                              * REMPROP) -- each slot holds a flat, alternating
+                              * (indicator value indicator value ...) list, per
+                              * the manual's own NIL/FF property-list diagrams.
+                              * Initialized to NIL_SYM per-symbol in intern, not
+                              * here -- NIL_SYM is 1, not 0, so a zeroed .skip
+                              * region would NOT already mean "empty". */
+    .skip 8 * 65536
+
 tokbuf:                     /* scratch buffer for the token currently being read */
     .skip 256
 
@@ -232,6 +242,11 @@ caddr:
     call    cdr
     mov     %rax, %rdi
     jmp     car
+
+cddr:
+    call    cdr
+    mov     %rax, %rdi
+    jmp     cdr
 
 caar:
     call    car
@@ -675,6 +690,187 @@ prog_setvar:                      /* rdi=var, rsi=val, rdx=env */
     lea     fmt_condition_setq_unbound(%rip), %rsi
     xor     %eax, %eax
     call    fprintf
+    ret
+
+/* get_prim/deflist_prim/remprop_prim -- property lists (Appendix B
+ * ст.58-59, both verified by direct page-image read). Each symbol
+ * gets its own separate property list, a flat, alternating
+ * (indicator value indicator value ...) list, per the manual's own
+ * NIL/FF property-list diagrams -- stored in proplist_table,
+ * index-parallel to symtab. This kernel does not model the "-1
+ * sentinel head" or the PNAME/EXPR/SUBR indicators the real system
+ * uses internally for ITS OWN function/name storage (that's
+ * 704/CTSS-specific representation detail this kernel doesn't share
+ * -- functions here live in global_env via DEFINE, not on property
+ * lists) -- only the general, user-visible GET/DEFLIST/REMPROP
+ * facility itself.
+ *
+ * Reconstruction-derived correction, not a blind transcription: the
+ * scanned image's own get[x;y] recursive step reads as
+ * "get[cdr[x];y]" -- but a single cdr cannot be correct for a flat
+ * alternating list (the very next car would be a VALUE, not an
+ * indicator, on the following call). Implemented as get[cddr[x];y]
+ * instead, the only structurally consistent reading, cross-checked
+ * against the manual's own flat-list property diagrams and its
+ * neighbouring prop[x;y;u] formula (which correctly uses a single
+ * cdr for ITS OWN, different, one-step-at-a-time list scan). */
+get_prim:                          /* rdi=symbol, rsi=indicator */
+    mov     %rdi, %rdx
+    shr     $2, %rdx
+    mov     proplist_table(,%rdx,8), %rdi
+    jmp     get_prim_walk
+
+get_prim_walk:                     /* rdi=plist, rsi=indicator */
+    push    %r12
+    push    %r13
+    mov     %rdi, %r12
+    mov     %rsi, %r13
+.get_prim_walk_loop:
+    cmp     $NIL_SYM, %r12
+    je      .get_prim_walk_nil
+    mov     %r12, %rdi
+    call    car
+    cmp     %r13, %rax
+    je      .get_prim_walk_found
+    mov     %r12, %rdi
+    call    cddr
+    mov     %rax, %r12
+    jmp     .get_prim_walk_loop
+.get_prim_walk_found:
+    mov     %r12, %rdi
+    call    cadr
+    jmp     .get_prim_walk_done
+.get_prim_walk_nil:
+    mov     $NIL_SYM, %rax
+.get_prim_walk_done:
+    pop     %r13
+    pop     %r12
+    ret
+
+/* deflist[x;ind] -- x is a list of (u v) pairs; for each, prepends
+ * ind and v onto u's own property list ("puts things on at the
+ * front", ст.58 -- so a repeated indicator is shadowed by the newer
+ * entry, never physically replaced, matching "the old value will be
+ * replaced by the new one" as an observable effect of GET always
+ * finding the front-most match first). Returns the list of u's,
+ * consistent with define[x] = deflist[x;EXPR] and "the value of
+ * define is the list of u's" (ст.58) -- deflist must return the same
+ * shape for that equation to hold. */
+deflist_prim:                      /* rdi=pairlist, rsi=ind */
+    push    %r12
+    push    %r13
+    push    %r14
+    push    %rbx
+    mov     %rdi, %r12
+    mov     %rsi, %r13
+    cmp     $NIL_SYM, %r12
+    je      .deflist_base
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %r14              /* onepair = (u v) */
+    mov     %r14, %rdi
+    call    car
+    mov     %rax, %rbx              /* rbx = u */
+    mov     %r14, %rdi
+    call    cadr                    /* v */
+    mov     %rax, %rdi
+    mov     %rbx, %rdx
+    shr     $2, %rdx
+    mov     proplist_table(,%rdx,8), %rsi
+    call    cons                    /* (v . plist) */
+    mov     %rax, %rsi
+    mov     %r13, %rdi
+    call    cons                    /* (ind v . plist) */
+    mov     %rbx, %rdx
+    shr     $2, %rdx
+    mov     %rax, proplist_table(,%rdx,8)
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    deflist_prim            /* recurse -- filtered rest of the list of u's */
+    mov     %rax, %rsi
+    mov     %rbx, %rdi
+    call    cons                    /* u . (rest of the u's) */
+    jmp     .deflist_done
+.deflist_base:
+    mov     $NIL_SYM, %rax
+.deflist_done:
+    pop     %rbx
+    pop     %r14
+    pop     %r13
+    pop     %r12
+    ret
+
+/* remprop[x;ind] -- x is a SYMBOL here (matching get/deflist's own
+ * x=symbol convention, ст.58); removes ALL occurrences of ind (and
+ * its following value) from x's property list. Value is always NIL
+ * (ст.59). Rebuilds a filtered list rather than literally splicing
+ * with RPLACD as the real system does -- same observable result,
+ * simpler and safer than in-place list surgery in hand-written
+ * assembly; not exposed to any caller as a semantic difference. */
+remprop_prim:                      /* rdi=symbol, rsi=indicator */
+    push    %r12
+    push    %r13
+    push    %r14
+    mov     %rdi, %r14
+    mov     %rsi, %r13
+    mov     %r14, %rdx
+    shr     $2, %rdx
+    mov     proplist_table(,%rdx,8), %r12
+    mov     %r12, %rdi
+    mov     %r13, %rsi
+    call    remprop_filter
+    mov     %r14, %rdx
+    shr     $2, %rdx
+    mov     %rax, proplist_table(,%rdx,8)
+    mov     $NIL_SYM, %rax
+    pop     %r14
+    pop     %r13
+    pop     %r12
+    ret
+
+remprop_filter:                    /* rdi=plist, rsi=indicator -> filtered plist */
+    push    %r12
+    push    %r13
+    mov     %rdi, %r12
+    mov     %rsi, %r13
+    cmp     $NIL_SYM, %r12
+    je      .remprop_filter_base
+    mov     %r12, %rdi
+    call    car
+    cmp     %r13, %rax
+    je      .remprop_filter_skip
+    mov     %r12, %rdi
+    call    car
+    push    %rax                    /* this-ind */
+    mov     %r12, %rdi
+    call    cadr
+    push    %rax                    /* this-val */
+    mov     %r12, %rdi
+    call    cddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    remprop_filter
+    mov     %rax, %rsi
+    pop     %rdi                     /* this-val */
+    call    cons
+    mov     %rax, %rsi
+    pop     %rdi                     /* this-ind */
+    call    cons
+    jmp     .remprop_filter_done
+.remprop_filter_skip:
+    mov     %r12, %rdi
+    call    cddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    remprop_filter
+    jmp     .remprop_filter_done
+.remprop_filter_base:
+    mov     $NIL_SYM, %rax
+.remprop_filter_done:
+    pop     %r13
+    pop     %r12
     ret
 
 evlis:
@@ -1267,7 +1463,7 @@ eval:
 
 .try_rplacd:
     cmp     $RPLACD_SYM, %r14
-    jne     .try_minus
+    jne     .try_get
     push    %rbx
     mov     %r12, %rdi
     call    cadr
@@ -1289,6 +1485,65 @@ eval:
 .rplacd_done:
     mov     %rbx, %rax
     pop     %rbx
+    jmp     .eval_done
+
+.try_get:
+    /* get[x;y] (Appendix B ст.58-59) -- ordinary primitive, both
+     * args evaluated. x must evaluate to a symbol. */
+    cmp     $GET_SYM, %r14
+    jne     .try_deflist
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rsi
+    pop     %rdi
+    call    get_prim
+    jmp     .eval_done
+
+.try_deflist:
+    cmp     $DEFLIST_SYM, %r14
+    jne     .try_remprop
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rsi
+    pop     %rdi
+    call    deflist_prim
+    jmp     .eval_done
+
+.try_remprop:
+    cmp     $REMPROP_SYM, %r14
+    jne     .try_minus
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rsi
+    pop     %rdi
+    call    remprop_prim
     jmp     .eval_done
 
 .try_minus:
@@ -2120,6 +2375,7 @@ intern:
     mov     %rax, strheap_ptr(%rip)
     mov     symtab_count(%rip), %r13
     mov     %rcx, symtab(,%r13,8)
+    movq    $NIL_SYM, proplist_table(,%r13,8)
     lea     0(,%r13,4), %rax     /* id*4 -- leaves bit1=0, marking "symbol" */
     or      $1, %rax
     push    %rax
@@ -2272,6 +2528,43 @@ read_sexpr:
     call    read_atom
     ret
 
+/* peek_dot() -> rax=1 if a standalone "." token is next (surrounded
+ * by whitespace/parens/EOF on both sides, matching the printer's own
+ * dotted-pair output convention "(A . B)") -- and CONSUMES just the
+ * "." character itself, leaving the rest of input untouched. rax=0
+ * and input_ptr left alone otherwise. A "." embedded in a longer
+ * token (there are none in this kernel -- no floats, per
+ * looks_numeric's own comment above) would never reach here anyway,
+ * since read_atom's tokenizer only stops at whitespace/parens/EOF. */
+peek_dot:
+    call    skip_ws
+    mov     input_ptr(%rip), %rdi
+    movzx   (%rdi), %eax
+    cmp     $'.', %al
+    jne     .peek_dot_no
+    movzx   1(%rdi), %ecx
+    test    %cl, %cl
+    jz      .peek_dot_yes
+    cmp     $' ', %cl
+    je      .peek_dot_yes
+    cmp     $'\t', %cl
+    je      .peek_dot_yes
+    cmp     $'\n', %cl
+    je      .peek_dot_yes
+    cmp     $'(', %cl
+    je      .peek_dot_yes
+    cmp     $')', %cl
+    je      .peek_dot_yes
+    jmp     .peek_dot_no
+.peek_dot_yes:
+    inc     %rdi
+    mov     %rdi, input_ptr(%rip)
+    mov     $1, %eax
+    ret
+.peek_dot_no:
+    xor     %eax, %eax
+    ret
+
 read_list:
     call    skip_ws
     mov     input_ptr(%rip), %rdi
@@ -2284,7 +2577,32 @@ read_list:
     ret
 .read_list_elem:
     call    read_sexpr
+    push    %rax                   /* car */
+    call    peek_dot
+    test    %rax, %rax
+    jz      .read_list_proper
+    /* dotted-pair tail: "(A . B)" -- read exactly one more sexpr as
+     * the cdr, matching the printer's own dotted-pair notation
+     * (previously only the printer could produce this syntax; the
+     * reader could not parse it back -- tests/lisp15-library-
+     * functions/PROVENANCE.md documented this asymmetry). */
+    call    read_sexpr             /* cdr */
     push    %rax
+    call    skip_ws
+    mov     input_ptr(%rip), %rdi
+    movzx   (%rdi), %eax
+    cmp     $')', %al
+    jne     .read_list_dot_close   /* malformed: no closing paren --
+                                     * graceful, don't consume, don't
+                                     * crash */
+    inc     %rdi
+    mov     %rdi, input_ptr(%rip)
+.read_list_dot_close:
+    pop     %rsi                   /* cdr */
+    pop     %rdi                   /* car */
+    call    cons
+    ret
+.read_list_proper:
     call    read_list
     mov     %rax, %rsi
     pop     %rdi
@@ -2426,6 +2744,9 @@ print_sexpr:
 .equ RETURN_SYM,     197
 .equ SETQ_SYM,       201
 .equ SET_SYM,        205
+.equ GET_SYM,        209
+.equ DEFLIST_SYM,    213
+.equ REMPROP_SYM,    217
 
     .text
 
@@ -2545,6 +2866,12 @@ main:
     lea     sym_SETQ(%rip), %rdi
     call    intern
     lea     sym_SET(%rip), %rdi
+    call    intern
+    lea     sym_GET(%rip), %rdi
+    call    intern
+    lea     sym_DEFLIST(%rip), %rdi
+    call    intern
+    lea     sym_REMPROP(%rip), %rdi
     call    intern
 
     movq    $NIL_SYM, global_env(%rip)
@@ -2742,5 +3069,8 @@ sym_GO:         .asciz "GO"
 sym_RETURN:     .asciz "RETURN"
 sym_SETQ:       .asciz "SETQ"
 sym_SET:        .asciz "SET"
+sym_GET:        .asciz "GET"
+sym_DEFLIST:    .asciz "DEFLIST"
+sym_REMPROP:    .asciz "REMPROP"
 
     .section .note.GNU-stack,"",@progbits

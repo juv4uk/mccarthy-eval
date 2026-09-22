@@ -1,0 +1,1 @@
+(EQUAL (QUOTE (A B . C)) (CONS (QUOTE A) (CONS (QUOTE B) (QUOTE C))))
