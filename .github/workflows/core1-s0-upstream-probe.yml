@@ -1,0 +1,43 @@
+name: Core1 S0 upstream probe
+
+on:
+  push:
+    branches:
+      - agent/42-core1-upstream-probe
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core1-s0:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout unchanged S0 seed
+        uses: actions/checkout@v5
+
+      - name: Checkout exact upstream Core1
+        uses: actions/checkout@v5
+        with:
+          repository: juv4uk/my-lisp
+          ref: bb30004efdeef743a8512ed54febf3327c4b0182
+          path: upstream-my-lisp
+
+      - name: Build historical seed unchanged
+        run: gcc -no-pie -O0 -s -o mccarthy-kernel mccarthy-kernel.s
+
+      - name: Assemble exact upstream Core1 probe
+        run: |
+          cat upstream-my-lisp/lib/core1.lisp \
+              upstream-my-lisp/tests/fixtures/core1-s0-witness.lisp \
+              > /tmp/core1-s0.lisp
+          sha256sum upstream-my-lisp/lib/core1.lisp
+          sha256sum upstream-my-lisp/tests/fixtures/core1-s0-witness.lisp
+          sha256sum mccarthy-kernel
+
+      - name: Execute Core1 on S0 seed
+        run: |
+          set -o pipefail
+          ./mccarthy-kernel /tmp/core1-s0.lisp | tee /tmp/core1-s0.out
+          echo "--- last 40 output lines ---"
+          tail -n 40 /tmp/core1-s0.out
