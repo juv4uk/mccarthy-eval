@@ -2,3 +2,7 @@
 # не комітяться.
 mccarthy-eval
 mccarthy-kernel
+
+# Локальні копії первинних джерел (авторське право, великі скани) --
+# provenance/checksum записано в external-sources/lisp-manuals/README.md.
+external-sources/**/*.pdf
