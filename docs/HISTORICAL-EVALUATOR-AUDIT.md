@@ -50,21 +50,21 @@ audit.
 
 | Historical mechanism | Current implementation | Evidence status |
 |---|---|---|
-| `apply[f;args]` | The kernel's ordinary/dynamic call path reconstructs `cons[f;appq[args]]` and re-enters `eval`. The historical corpus includes recursive application cases. | source-confirmed structure; executable witness |
+| `apply[f;args]` | `.plain_call` reconstructs `cons[f;appq[args]]` and re-enters `eval`. The historical corpus includes recursive application cases. | source-confirmed structure; executable witness |
 | `appq[m]` | `appq` recursively quotes every already-evaluated argument with `QUOTE`, preserving value-vs-code distinction before re-entry into `eval`. | source-confirmed; regression witness #21 |
 | atomic `eval` | `eval` dispatches atoms to `assoc`, with explicit self-evaluation for `T` and fixnums. | `T` is source-supported by historical evidence; fixnum self-evaluation is a later runtime extension |
 | `QUOTE` | Returns `cadr[e]` without evaluating it. | source-confirmed; fixtures 01-02 |
 | `ATOM` | Evaluates its argument, applies `atomp`, projects to `T/NIL`. | source-confirmed; fixtures 03-05 |
 | `EQ` | Evaluates both arguments, compares tagged identity values, projects to `T/NIL`. | source-confirmed; fixtures 06-08 |
-| `COND` | Delegates to `evcon`; first non-`NIL` test wins. | source-confirmed; fixtures 12-13 |
+| `COND` | `.try_cond` delegates to `evcon`; first non-`NIL` test wins. | source-confirmed; fixtures 12-13 |
 | `CAR` | Evaluates its single argument, then applies `car`. | source-confirmed; fixture 09 |
 | `CDR` | Evaluates its single argument, then applies `cdr`. | source-confirmed; fixture 10 |
 | `CONS` | Evaluates both arguments, then calls `cons`. | source-confirmed; fixture 11 |
-| ordinary application | Resolves the function through `assoc`, evaluates arguments with `evlis`, runs `appq`, constructs a new expression, and re-enters `eval`. | source-confirmed structure; regression witness #21 |
-| `LABEL` | Extends the environment with a function binding, constructs the lambda application, and re-enters `eval`. | source-confirmed structure; fixture 19 |
-| `LAMBDA` | Evaluates argument expressions with `evlis`, builds parameter/value pairs with `pair`, appends them to the environment, and evaluates the body. | source-confirmed structure; fixtures 16-18, 20 |
-| `evcon` | Evaluates each clause test in order; non-`NIL` selects its result; otherwise recurses to next clause. | source-confirmed where clauses exist |
-| `evlis` | Base `NIL`; otherwise evaluate head, recurse on tail, then `cons` results. | source-confirmed; fixtures 17-18 |
+| ordinary application / `.plain_call` | Resolves the function through `assoc`, evaluates arguments with `evlis`, runs `appq`, constructs a new expression, and re-enters `eval`. | source-confirmed structure; regression witness #21 |
+| `LABEL` | `.head_not_atom` → `LABEL_SYM` extends the environment with a function binding, constructs the lambda application, and re-enters `eval`. | source-confirmed structure; fixture 19 |
+| `LAMBDA` | `.try_lambda` evaluates argument expressions with `evlis`, builds parameter/value pairs with `pair`, appends them to the environment, and evaluates the body. | source-confirmed structure; fixtures 16-18, 20 |
+| `evcon` / `.evcon_nomatch` | Evaluates each clause test in order; non-`NIL` selects its result; otherwise recurses to next clause. | source-confirmed where clauses exist |
+| `evlis` / `.evlis_base` | Base `NIL`; otherwise evaluate head, recurse on tail, then `cons` results. | source-confirmed; fixtures 17-18 |
 | `assoc` | Walks the environment alist and returns the value part of the matching dotted pair. | source-supported environment model; implementation witness |
 | `pair` | Recursively constructs dotted `(name . value)` bindings used by `LAMBDA`. | source-supported mechanism; implementation representation |
 | `append` | Recursively prepends the generated bindings to the inherited environment. | source-supported mechanism; implementation witness |
