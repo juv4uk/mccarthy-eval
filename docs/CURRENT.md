@@ -65,3 +65,12 @@ Local snapshots у docs/references/ є convenience copies. Вони зберіг
 ## Historical source rule
 
 1959 draft, errata 1959, published form 1960 і пізні McCarthy retrospectives — різні evidence layers. Не змішувати їх у одну виправлену версію без явно записаної трансформації.
+
+
+## Нова політика мовних функцій — 2026-09-22
+
+У реконструкції **кожна мовна функція або форма має historical provenance**. McCarthy 1960 є core layer; LISP I 1960 та LISP 1.5 є окремими historical facility layers. Modern machine/runtime machinery дозволена лише як implementation witness і не може вигадувати нову Lisp semantics.
+
+Див. `docs/HISTORICAL-FUNCTION-LEDGER.md` та issue #19 HISTORICAL-FUNCTIONS-1.
+
+Поточний unresolved feature: `ENV` не має зафіксованого historical source і тому не повинен рахуватися reconstructed language function без нового evidence.
