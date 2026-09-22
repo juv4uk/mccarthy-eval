@@ -27,6 +27,13 @@
      (context . "CML x86_64 freestanding backend is already viable for a substantial Lisp subset. Full historical apply/eval is blocked by general runtime first-class application; external CML #180 tracks this.")
      (description . "Prepare historical fixtures and the eventual my-lisp -> CML -> x86 witness without copying the evaluator into Rust or hand-wiring a semantic bypass.")
      (depends-on . (DOC-BUNDLE-1 RECON-02))))
+   ("HISTORICAL-FUNCTIONS-1" .
+    ((priority . 10.0)
+     (capabilities . (historical-provenance language-functions lisp-1960 lisp-1.5))
+     (origin . owner)
+     (context . "Owner decision 2026-09-22: every language function/form included in reconstruction must come from a historical Lisp source. McCarthy 1960 is the core layer; LISP I/LISP 1.5 provide later historical facilities with separate provenance.")
+     (description . "Audit every language feature in mccarthy-eval, record exact historical source/page/edition, reclassify PLUS/TIMES/DIFFERENCE/ZEROP/DEFINE as historical facilities where supported, and remove or de-semanticize anything without historical provenance (currently ENV is unresolved).")
+     (done . nil)))
    ("DUAL-WITNESS-1" .
     ((priority . 8.8)
      (capabilities . (historical-witness compiler-witness differential))

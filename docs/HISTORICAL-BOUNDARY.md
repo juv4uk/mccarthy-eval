@@ -2,129 +2,65 @@
 
 Дата аудиту: 2026-09-22.
 
-Цей документ фіксує межу між трьома шарами поточного `mccarthy-eval`:
+Цей документ фіксує межу між шарами поточного `mccarthy-eval`, але після рішення власника 2026-09-22 застосовується додаткове правило: **усі мовні функції/форми мають походити з історичного Lisp material**.
 
-1. **historical core** — те, що безпосередньо відтворює evaluator McCarthy 1960;
-2. **reconstruction support** — сучасні механізми, потрібні, щоб цей evaluator можна було реально зібрати, подати й виконати на x86-64;
-3. **modern extension** — можливості, яких немає у наведеному evaluator 1960 року й які додані пізніше для зручності/дослідження.
-
-Мета не видаляти сучасні можливості, а не видавати їх за частину історичної семантики.
-
-## 1. Historical core
+## 1. Historical core — McCarthy 1960
 
 Першоджерело: `docs/correspondence/mccarthy-1960-eval-apply-primary-source-2026-08-28.md`.
 
-У публікації 1960 року (pp. 16–18) явно наведені:
+У published 1960 evaluator прямо наведені:
 
-| Component | Роль | Evidence |
-|---|---|---|
-| `apply` | формує вираз `cons[f; appq[args]]` і передає його в `eval` з `NIL`-environment | source-confirmed |
-| `appq` | цитує вже обчислені аргументи перед повторним `eval` | source-confirmed |
-| `eval` | головний evaluator з виразом `e` та environment `a` | source-confirmed |
-| `evcon` | послідовно перевіряє умови `COND` | source-confirmed |
-| `evlis` | обчислює список аргументів | source-confirmed |
-| `QUOTE` | повертає `cadr[e]` | source-confirmed |
-| `ATOM` | `atom[eval[...]]` | source-confirmed |
-| `EQ` | порівнює два обчислені значення | source-confirmed |
-| `COND` | делегує до `evcon` | source-confirmed |
-| `CAR` | застосовує `car` до обчисленого аргументу | source-confirmed |
-| `CDR` | застосовує `cdr` до обчисленого аргументу | source-confirmed |
-| `CONS` | будує пару з двох обчислених аргументів | source-confirmed |
-| `LABEL` | розширює environment і оцінює lambda-form | source-confirmed |
-| `LAMBDA` | будує bindings через `pair` + `evlis` і `append` | source-confirmed |
-| `assoc` | шукає значення символу в environment | source-confirmed by formula usage |
-| `pair` | формує список bindings для `LAMBDA` | source-confirmed by formula usage |
-| `append` | додає bindings до environment | source-confirmed by formula usage |
+- `apply`, `appq`, `eval`, `evcon`, `evlis`;
+- `QUOTE`, `ATOM`, `EQ`, `COND`, `CAR`, `CDR`, `CONS`;
+- `LABEL`, `LAMBDA`;
+- `assoc`, `pair`, `append` як складові описаного механізму environment.
 
-Це **історичний evaluator contract**, а не твердження про повний історичний runtime McCarthy або про весь Lisp 1.5.
+Це primary historical-core layer.
 
-### Важлива provenance-межа
+## 2. Historical facilities from other LISP sources
 
-1959 AIM-008, errata 13.03.1959, опублікована форма 1960 року та пізня примітка McCarthy 1995 не можна механічно злити в одну «виправлену» формулу.
+Функція не мусить бути саме в семи dispatcher-ах paper 1960, щоб бути історичною. За новим правилом вона може належати до реконструкції, якщо для неї є окреме автентичне історичне джерело.
 
-Локальний AIM-008 snapshot неповний: наявний скан обривається на page 8, тоді як errata посилається на page 15. Тому для поточного executable core primary formula є **published 1960 form**, а 1959 material використовується як окремий evidence layer.
+Поточні приклади:
 
-McCarthy також пізніше прямо зазначив (1995), що надрукована версія `eval` «isn't quite right». Це робить provenance важливішим, а не дає підстав непомітно замінювати published form сучасною інтерпретацією.
+- `PLUS`, `TIMES` — LISP I Programmer's Manual, March 1, 1960;
+- `DEFINE` — LISP I Programmer's Manual (1960) та LISP 1.5 Programmer's Manual;
+- `DIFFERENCE`, `ZEROP` та багато інших arithmetic/predicate facilities — LISP 1.5 Programmer's Manual.
 
-## 2. Reconstruction support
+Такі функції не можна називати “modern invention”; водночас вони не повинні змішуватися з McCarthy-1960 evaluator core. Для кожної потрібні окремі source/page/edition citations.
 
-Ці компоненти потрібні для робочого executable witness, але не повинні подаватися як додані McCarthy 1960 primitives:
+## 3. Machine/runtime support
 
-| Component | Поточна роль | Classification |
-|---|---|---|
-| tagged 64-bit representation | machine representation cons/symbol/immediate values | reconstruction support |
-| 16-byte aligned cons heap | фізична реалізація pair storage | reconstruction support |
-| runtime symbol interning | перетворення текстових імен у внутрішні значення | reconstruction support |
-| reader / tokenizer | текст `Lisp` → S-expression | reconstruction support |
-| printer | S-expression → text | reconstruction support |
-| `main`, file loading, `process_buffer` | запуск executable witness | reconstruction support |
-| callee-saved register discipline / SysV ABI glue | x86-64 execution mechanism | reconstruction support |
-| `car`/`cdr` type guards | сучасна безпека реалізації; не частина M-expression formula | reconstruction-derived support |
-| `NIL` / `T` machine tags | конкретне representation choice | reconstruction support |
+Сучасними можуть бути лише механізми реалізації witness:
 
-Особливо важливо не робити з runtime representation semantic authority: ці деталі належать до цього x86-64 witness, а не до `my-lisp` Canon.
+- tagged 64-bit representation;
+- aligned cons heap;
+- symbol interning;
+- reader/tokenizer implementation;
+- printer implementation;
+- x86-64 SysV ABI glue;
+- file/stdin plumbing;
+- process startup.
 
-## 3. Modern extension
+Вони не є новими Lisp primitives.
 
-У поточному kernel є функціональність, якої немає серед семи dispatchers і формул evaluator-а, наведених у paper 1960:
+## 4. Features that currently need removal or provenance
 
-| Extension | Що саме додано | Classification |
-|---|---|---|
-| fixnum tag | окремий immediate representation для цілих чисел | modern extension |
-| `ZEROP` | numeric predicate | modern extension |
-| `TIMES` | multiplication | modern extension |
-| `DIFFERENCE` | subtraction | modern extension |
-| `PLUS` | addition | modern extension |
-| numeric reader/printer | читання/друк decimal integers | modern extension |
-| `DEFINE` | persistent top-level global environment binding | modern extension |
-| `startup.lisp` autoload | сучасна startup convention | modern extension |
-| `ENV` | introspection of current global bindings | modern extension |
-| interactive REPL | stdin prompt / command loop | modern extension |
-| convenience error/fallback behavior | safe `NIL` returns for some malformed operations | reconstruction support; not historical semantics |
+`ENV` поки не має зафіксованого історичного джерела. Отже його не можна рахувати реконструйованою мовною функцією.
 
-### Arithmetic boundary
+До знаходження historical provenance:
 
-`ZEROP`, `TIMES`, `DIFFERENCE`, `PLUS`, fixnums, decimal parsing and decimal printing are explicitly treated as **extensions**.
+- або прибрати `ENV` із language surface;
+- або залишити лише як явно non-semantic debugging/tooling, не як historical Lisp feature.
 
-Historical-core tests must not depend on arithmetic.
+`startup.lisp` autoload і точна сучасна REPL convenience також не мають автоматично отримувати historical semantic status лише через те, що історичні LISP системи мали подібні операційні механізми.
 
-### Top-level boundary
+## 5. Provenance rule
 
-`DEFINE`, `ENV`, `startup.lisp` and the REPL loop are **execution conveniences / modern extensions**. They may load and execute historical-core Lisp forms, but their existence must not be used as evidence that they belong to McCarthy's 1960 evaluator definition.
+Для кожної мовної функції/форми:
 
-## 4. Deliberate implementation deviations
+`historical source → exact definition/description → implementation → fixture → observed execution`.
 
-Current assembly contains several places where a modern safety or representation decision differs from the literal published formula. These are not to be silently promoted to historical facts.
+Якщо historical source відсутній, feature не входить до historical language reconstruction.
 
-Known examples:
-
-- unmatched `COND` currently returns `NIL`, while the paper's `evcon` formula does not specify a separate NIL base case;
-- `LABEL` uses the project's dotted binding representation for compatibility with its `assoc`, whereas the published formula writes `list[cadar[e];car[e]]`;
-- malformed-arity operations may fail closed to `NIL` rather than signaling a dedicated semantic error;
-- unbound function calls and incomplete reader input still have known failure modes.
-
-These should remain documented as **reconstruction behavior**, not retroactively attributed to McCarthy 1960.
-
-## 5. Test boundary
-
-Historical-core regression fixtures belong to #9 and must exercise:
-
-`apply`, `appq`, `eval`, `evcon`, `evlis`, the seven dispatchers, `LABEL`, `LAMBDA`, environment lookup, and source-derived list behavior.
-
-Modern-extension tests should be separate and may exercise:
-
-`PLUS`, `DIFFERENCE`, `TIMES`, `ZEROP`, numeric I/O, `DEFINE`, `ENV`, startup loading and REPL behavior.
-
-A passing extension test is **not** evidence that an extension was part of the 1960 paper.
-
-## 6. English mirror / normative summary
-
-The repository intentionally separates:
-
-- **Historical core:** McCarthy 1960 `apply`, `appq`, `eval`, `evcon`, `evlis`, the seven primitive dispatchers, and the published LABEL/LAMBDA environment machinery.
-- **Reconstruction support:** concrete x86-64 representation, heap, reader/printer, file/REPL plumbing needed to execute the witness, and implementation safety mechanisms.
-- **Modern extensions:** fixnums, arithmetic, decimal I/O, `DEFINE`, `startup.lisp`, `ENV`, and interactive conveniences.
-
-The historical source layers remain separate: 1959 draft, 1959 errata, 1960 published form, and later McCarthy retrospectives are evidence layers, not one merged semantic source.
-
-This document records the current classification of the existing implementation; it does not claim that the reconstruction is finished. Full executable historical regression coverage remains the work of #9.
+Повний inventory знаходиться в `docs/HISTORICAL-FUNCTION-LEDGER.md`.
