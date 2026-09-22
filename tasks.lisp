@@ -34,6 +34,13 @@
      (context . "Owner decision 2026-09-22: every language function/form included in reconstruction must come from a historical Lisp source. McCarthy 1960 is the core layer; LISP I/LISP 1.5 provide later historical facilities with separate provenance.")
      (description . "Audit every language feature in mccarthy-eval, record exact historical source/page/edition, reclassify PLUS/TIMES/DIFFERENCE/ZEROP/DEFINE as historical facilities where supported, and remove or de-semanticize anything without historical provenance (currently ENV is unresolved).")
      (done . nil)))
+   ("HISTORICAL-LISP-SOURCES-1" .
+    ((priority . 9.5)
+     (capabilities . (historical-provenance bibliography lisp-1960 lisp-1.5))
+     (origin . owner)
+     (context . "Follow-up to HISTORICAL-FUNCTIONS-1/#19 (issue #22): pin exact manual edition/date and page/section for PLUS/TIMES/DIFFERENCE/ZEROP/DEFINE, and verify current semantics against the source, not just the name.")
+     (description . "Downloaded and read LISP I Programmer's Manual (MIT, 1 Mar 1960, bitsavers/archive.org) and LISP 1.5 Programmer's Manual (1962, softwarepreservation.computerhistory.org) directly, page by page. Found and corrected a real name-match error: PLUS/TIMES were previously attributed to LISP I 1960, but that manual has no general numeric PLUS/TIMES at all (only sum/prdct/expt, floating-point only) -- PLUS/TIMES/DIFFERENCE/ZEROP all actually come from LISP 1.5 (1962) SS4.2, pp.31-32. DEFINE confirmed at LISP I 1960 SS3.1, pp.23-24, with a real semantic narrowing documented (source: list-of-pairs batch definition; current: one name per call). See docs/HISTORICAL-FUNCTION-LEDGER.md and docs/HISTORICAL-BOUNDARY.md.")
+     (done . "2026-09-22: exact citations pinned, PLUS/TIMES misattribution corrected, DEFINE/PLUS/TIMES/DIFFERENCE/ZEROP semantics compared against primary sources.")))
    ("DUAL-WITNESS-1" .
     ((priority . 8.8)
      (capabilities . (historical-witness compiler-witness differential))

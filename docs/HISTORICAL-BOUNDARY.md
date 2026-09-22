@@ -21,13 +21,12 @@
 
 Функція не мусить бути саме в семи dispatcher-ах paper 1960, щоб бути історичною. За новим правилом вона може належати до реконструкції, якщо для неї є окреме автентичне історичне джерело.
 
-Поточні приклади:
+Поточні приклади (точні §/сторінки — `docs/HISTORICAL-FUNCTION-LEDGER.md`, #22):
 
-- `PLUS`, `TIMES` — LISP I Programmer's Manual, March 1, 1960;
-- `DEFINE` — LISP I Programmer's Manual (1960) та LISP 1.5 Programmer's Manual;
-- `DIFFERENCE`, `ZEROP` та багато інших arithmetic/predicate facilities — LISP 1.5 Programmer's Manual.
+- `PLUS`, `TIMES`, `DIFFERENCE`, `ZEROP` — **LISP 1.5 Programmer's Manual (1962), §4.2 "Arithmetic Functions and Predicates", ст.31-32** (усі чотири з одного джерела, не з LISP I 1960 — виправлення попередньої версії цього документа: LISP I 1960 §4.4 прямо каже, що реальна арифметика там — це `sum`/`prdct`/`expt`, і навіть цілих чисел LISP I не підтримує; `PLUS`/`TIMES` у тексті LISP I 1960 — лише позначення в прикладі символьного диференціювання, не eval-рівня примітиви);
+- `DEFINE` — **LISP I Programmer's Manual (MIT, 1 березня 1960), §3.1 "Definition of Functions", ст.23-24** (реальне джерело підтверджене прямим читанням; поточна реалізація звужує семантику — джерело дозволяє список пар (ім'я, визначення) в одному виклику, поточна приймає лише одне ім'я за виклик).
 
-Такі функції не можна називати “modern invention”; водночас вони не повинні змішуватися з McCarthy-1960 evaluator core. Для кожної потрібні окремі source/page/edition citations.
+Такі функції не можна називати "modern invention"; водночас вони не повинні змішуватися з McCarthy-1960 evaluator core. Для кожної потрібні окремі source/page/edition citations — див. повну таблицю з детальним порівнянням семантики в `docs/HISTORICAL-FUNCTION-LEDGER.md`.
 
 ## 3. Machine/runtime support
 
