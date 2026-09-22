@@ -1,0 +1,1 @@
+(LENGTH (QUOTE (A B C D E)))
