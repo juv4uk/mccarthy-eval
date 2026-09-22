@@ -32,7 +32,7 @@ Symbolic Expressions and Their Computation by Machine, Part I») у
 | Файл | Що робить |
 |---|---|
 | `mccarthy-eval.s` | перший крок: дві захардкожені трасі з paper, 9-символьна таблиця, фіксований вхід |
-| `mccarthy-kernel.s` | повний kernel: reader/tokenizer, друкар, повний `eval` (QUOTE/ATOM/EQ/COND/CAR/CDR/CONS/LABEL/LAMBDA + арифметика ZEROP/TIMES/DIFFERENCE/PLUS), REPL, `startup.lisp` autoload, `(ENV)` |
+| `mccarthy-kernel.s` | повний kernel: reader/tokenizer, друкар, повний `eval` (QUOTE/ATOM/EQ/COND/CAR/CDR/CONS/LABEL/LAMBDA + історично підтверджена арифметика), REPL, `startup.lisp` autoload |
 
 ## Збірка й запуск
 
@@ -227,8 +227,7 @@ read-eval-print цикл на stdin замість завантаження фа
 ./mccarthy-kernel
 > (SQ 12)
 144
-> (ENV)
-(MYAPPEND DOUBLE SQ )
+
 ```
 
 Жодної нової Lisp-семантики — суто стартова конвенція, той самий код
@@ -296,31 +295,16 @@ read-eval-print цикл на stdin замість завантаження фа
    вказівника). Два з трьох задокументованих крашів лишаються
    відкритими.
 
-### `(ENV)` — перелік того, що вже визначено (2026-08-28)
+### `ENV` — вилучено з мовного surface (2026-09-22)
 
-Невеликий, явно запрошений додаток під час сесії «жодної feature
-роботи» — власник запитав, як побачити, які функції існують, і прямо
-попросив додати це, а не трактувати запит як порушення обсягу. `(ENV)`
-— третя top-level-only форма (поруч із `DEFINE`), опрацьована в
-`process_buffer`, ніколи не досягає `eval`: обходить `global_env` —
-буквально той самий alist, на який `DEFINE` конс-ить, жодної нової
-структури даних — і друкує звʼязані імена.
+Колишню top-level форму `(ENV)` вилучено з kernel, оскільки для неї
+не було знайдено достатнього історичного provenance. За новою політикою
+реконструкції мовна функція без історичного джерела не входить у
+reconstructed Lisp semantics.
 
-```lisp
-(DEFINE SQ (LABEL SQ (LAMBDA (X) (TIMES X X))))
-(ENV)
-```
-```
-(SQ )
-```
-
-Свідомо **не** перелічує 14 вбудованих спеціальних форм (`QUOTE`/
-`ATOM`/`EQ`/`COND`/`CAR`/`CDR`/`CONS`/`LABEL`/`LAMBDA`/`DEFINE`/
-`ZEROP`/`TIMES`/`DIFFERENCE`/`PLUS`/сам `ENV`) — вони ніде не
-зберігаються як дані для обходу; це порівняння символів, зашиті в
-ланцюжок диспетчеризації `eval`. Цей перелік існує лише як
-документація (цей файл, `KERNEL-WALKTHROUGH.md`), не як щось, що
-робочий kernel може перерахувати про себе сам.
+Повний historical function inventory тепер ведеться в
+`docs/HISTORICAL-FUNCTION-LEDGER.md`. Machine/runtime tooling може
+бути сучасним, але не може вводити нову мовну semantics.
 
 ### Реальний баг, знайдений живцем у REPL, 2026-08-28
 
