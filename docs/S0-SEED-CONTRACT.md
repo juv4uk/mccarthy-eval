@@ -33,16 +33,45 @@ RECIP QUOTIENT REMAINDER DIVIDE EXPT LESSP GREATERP ONEP MINUSP
 NUMBERP FIXP FLOATP LOGOR LOGAND LOGXOR LEFTSHIFT`).
 
 **LISP 1.5 Appendix A -- library-функції через LABEL/LAMBDA**: `SUBST
-MEMBER APPEND MAPLIST`.
+MEMBER APPEND MAPLIST PAIR SASSOC SEARCH REVERSE LENGTH COPY SUBLIS`.
 
-Разом: **45 іменованих символів**, кожен з provenance-цитатою на
+**LISP 1.5 Appendix B (1962) -- інтерпретатор**: `FUNCTION`/`FUNARG`,
+реальний closure-механізм 1962 року (ст.70-71 маніфесту, перевірено
+напряму по зображенню сторінки). Див. окремий розділ нижче.
+
+Разом: **47 іменованих символів**, кожен з provenance-цитатою на
 конкретну сторінку першоджерела. Жодна названа тут форма не
 претендує на Core 4 семантику.
 
-## Явно повідомлений, не замовчаний gap: немає справжніх closures
+## Closures/FUNARG gap -- частково закрито (2026-09-22), межа звужена й задокументована
 
-**У цьому seed немає first-class функцій / lexical closures.**
-Перевірено напряму:
+**Раніше** цей документ звітував: "у цьому seed немає first-class
+функцій / lexical closures" узагалі, з прикладом `((LABEL MAKE-ADDER
+(LAMBDA (N) (LAMBDA (X) (PLUS X N)))) 5) -> NIL`. Це лишається
+ПРАВДОЮ буквально для цього прикладу (голий, не загорнутий `LAMBDA` як
+значення), але виявилось, що **реальна LISP 1.5 (1962) сама має
+точно той самий gap і точно той самий, задокументований спосіб його
+обійти** — `FUNCTION`/`FUNARG`, Appendix B ст.70-71. Це не було
+додано "заради зручності" (заборонено нижче, пункт 3) — це
+реалізація вже наявної в самому джерелі 1962 року конструкції,
+`tests/appendix-b-funarg/PROVENANCE.md` містить повне обґрунтування й
+adversarial-перевірку.
+
+**Що працює зараз** (empirically confirmed, `tests/appendix-b-funarg/`,
+6 fixture): функція, що явно загортає свою власну λ через `(FUNCTION
+(LAMBDA ...))` перед поверненням, стає справжнім, коректно
+захопленим closure-значенням -- включно з вкладеним каррінгом (дві
+незалежні рівні захоплення одночасно) і передачею closure як
+параметра в іншу функцію:
+
+```
+(DEFINE MAKE-ADDER (LAMBDA (N) (FUNCTION (LAMBDA (X) (PLUS X N)))))
+(DEFINE ADD5 (MAKE-ADDER 5))
+(ADD5 3) -> 8
+```
+
+**Що досі НЕ працює, свідомо, історично точно** -- межа звужена, не
+стерта:
 
 ```
 ((LABEL MAKE-ADDER (LAMBDA (N) (LAMBDA (X) (PLUS X N)))) 5)
@@ -50,29 +79,26 @@ MEMBER APPEND MAPLIST`.
 -> NIL
 ```
 
-`LAMBDA` розпізнається лише як голова БЕЗПОСЕРЕДНЬОГО виклику
-(`eq[caar[e];LAMBDA]` у формулі `eval`), ніколи як значення, що
-повертається чи створюється динамічно. Єдиний "виклик через ім'я
-першого класу" в цьому seed -- вузький окремий випадок: `DEFINE`
-зберігає сирий `(LABEL name (LAMBDA ...))` у `global_env`, і коли це
-ім'я пізніше передається як параметр (як `PAIRUP` у `listutils.lisp`
-чи `WRAPFIRST` у `tests/lisp15-library-functions/`), `plain_call`
-підставляє сирий вираз назад у `eval`. Це працює **тільки** для
-top-level `DEFINE`'d імен -- не для довільно сконструйованих
-closures, що захоплюють змінне лексичне середовище (класична
-"FUNARG problem" з історії Lisp 1960-х, та сама проблема, над якою
-окремо працює `cml#180`, "general first-class application").
+Голий `(LAMBDA ...)`, повернутий як значення БЕЗ явного `FUNCTION`,
+досі провалюється -- і це не залишковий баг: реальна LISP 1.5 1962
+року теж не дозволяє це (`eval` перевіряє лише `eq[car[form],
+FUNCTION]`, ніколи `LAMBDA`, коли `form` не є буквальним викликом).
+Adversarially підтверджено (`tests/appendix-b-funarg/PROVENANCE.md`):
+цей негативний приклад дає однаковий результат і до, і після
+додавання `FUNCTION`/`FUNARG`.
 
-**Якщо Core 1 потребує справжніх closures -- цей seed їх НЕ дасть.**
-Це report, не guess: `#42`'s acceptance criteria прямо вимагає "no
-new Lisp semantics are introduced in assembly solely to make
-bootstrap convenient" -- тому цей seed свідомо не буде імітувати
-closures додаванням нової асемблерної семантики. Якщо Core 1
-справді потребує first-class functions на S0-рівні, це або
-узгоджується як явне розширення з окремим historical чи
-reconstruction-derived provenance, або S1 (`core1.lisp`) має бути
-написаний так, щоб не покладатись на них до S2/S3, де реальне
-рішення (CML) уже працює над цим окремо.
+Все ще НЕ реалізовано й НЕ заплановано: `PROG`/`GO` (потрібен для
+дечого з Appendix B, окрема, більша семантика), і reader не парсить
+dotted-pair синтаксис на вході (`tests/lisp15-library-functions/
+PROVENANCE.md`).
+
+**Якщо Core 1 потребує closures, що НЕ використовують явний
+`FUNCTION`** (наприклад, автоматичне захоплення вільних змінних без
+явної обгортки, як у сучасних Lisp-ах) -- цей seed їх НЕ дасть, і це
+було б справді новою семантикою, не історичною реконструкцією; така
+потреба або узгоджується окремо, або S1 (`core1.lisp`) пишеться з
+явним `FUNCTION` там, де потрібне справжнє замикання (як і в
+реальному коді 1962 року).
 
 ## Реальна S0 evidence -- вже готова, не обіцянка
 
@@ -86,9 +112,10 @@ target CPU, binary hash, bootstrap transcript"):
   i5-6400);
 - binary SHA-256, перевірена на детермінованість (два незалежні
   білди дають identical hash);
-- повний прогін усіх шести корпусів (McCarthy core, ISA-baseline,
+- повний прогін усіх семи корпусів (McCarthy core, ISA-baseline,
   LISP 1.5 hardware primitives, LISP 1.5 library functions, REPL
-  diagnostics) двічі -- output-identity доказ.
+  diagnostics, Appendix B FUNCTION/FUNARG) двічі -- output-identity
+  доказ.
 
 Коли `core1.lisp` з'явиться в `my-lisp`, транскрипт його виконання
 на цьому seed додається до того самого звіту як ще одна ворота --

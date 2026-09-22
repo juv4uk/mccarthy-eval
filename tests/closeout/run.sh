@@ -81,6 +81,7 @@ run_gate "historical-facility-extensions (#27)" "tests/historical-facility-exten
 run_gate "lisp15-library-primitives (#7 Фаза 2, Appendix A hardware primitives)" "tests/lisp15-library-primitives/run.sh"
 run_gate "lisp15-library-functions (#7 Фаза 2, Appendix A LABEL/LAMBDA library)" "tests/lisp15-library-functions/run.sh"
 run_gate "repl-diagnostics (CONDITION stderr side-channel, stdout semantics unchanged)" "tests/repl-diagnostics/run.sh"
+run_gate "appendix-b-funarg (#7 closures/FUNARG problem, Appendix B)" "tests/appendix-b-funarg/run.sh"
 
 # Round 2 -- prove determinism, not just single-run success
 echo "--- Determinism check: rebuild and rerun everything a second time ---"
@@ -98,6 +99,7 @@ run_gate "historical-facility-extensions (round 2, output-identity check)" "test
 run_gate "lisp15-library-primitives (round 2, output-identity check)" "tests/lisp15-library-primitives/run.sh"
 run_gate "lisp15-library-functions (round 2, output-identity check)" "tests/lisp15-library-functions/run.sh"
 run_gate "repl-diagnostics (round 2, output-identity check)" "tests/repl-diagnostics/run.sh"
+run_gate "appendix-b-funarg (round 2, output-identity check)" "tests/appendix-b-funarg/run.sh"
 echo
 
 echo "--- Known regression witnesses covered by this closeout ---"

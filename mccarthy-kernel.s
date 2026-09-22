@@ -485,9 +485,35 @@ eval:
     jz      .head_not_atom
 
     cmp     $QUOTE_SYM, %r14
+    jne     .try_function
+    mov     %r12, %rdi
+    call    cadr
+    jmp     .eval_done
+
+.try_function:
+    /* eq[car[form];FUNCTION] -> list[FUNARG;cadr[form];a]
+     * (Appendix B, LISP 1.5 Manual 1962, ст.71 -- real, source-
+     * confirmed formula, verified by direct page-image read, not
+     * OCR). FUNCTION wraps its argument together with the CURRENT
+     * environment a into a 3-list (FUNARG fn a) -- this triple IS
+     * this kernel's "function value" representation. Its own
+     * argument, cadr[form], is used unevaluated on purpose, matching
+     * the real formula exactly (fn is typically a raw (LAMBDA ...)
+     * or (LABEL name (LAMBDA ...)) expression, not a value). */
+    cmp     $FUNCTION_SYM, %r14
     jne     .try_atom
     mov     %r12, %rdi
     call    cadr
+    push    %rax
+    mov     %r13, %rdi
+    mov     $NIL_SYM, %rsi
+    call    cons
+    mov     %rax, %rsi
+    pop     %rdi
+    call    cons
+    mov     %rax, %rsi
+    mov     $FUNARG_SYM, %rdi
+    call    cons
     jmp     .eval_done
 
 .try_atom:
@@ -1552,7 +1578,7 @@ eval:
 
 .try_lambda:
     cmp     $LAMBDA_SYM, %rax
-    jne     .eval_done          /* head is neither LABEL nor LAMBDA: give up cleanly */
+    jne     .try_funarg
     mov     %r12, %rdi
     call    cdr
     mov     %rax, %rdi
@@ -1572,6 +1598,82 @@ eval:
     call    caddar
     mov     %rax, %rdi
     pop     %rsi
+    call    eval
+    jmp     .eval_done
+
+.try_funarg:
+    /* eq[car[fn];FUNARG] -> apply[cadr[fn];args;caddr[fn]] (Appendix
+     * B, ст.70 -- car[e] here IS the FUNARG triple itself, produced
+     * earlier by FUNCTION, sitting directly in call-head position;
+     * this is the real historical closure mechanism, not invented
+     * semantics). Arguments are evaluated under the CURRENT env
+     * (r13, the call site) exactly as any other call -- only the
+     * wrapped function's own body runs under the CAPTURED env
+     * (caddr of the triple) instead of r13. Reuses the same
+     * reconstruct-and-re-eval trick .plain_call already relies on:
+     * build (innerfn . evaluated-args) and hand it to eval under the
+     * captured environment, letting eval's own LABEL/LAMBDA dispatch
+     * (above) do the actual application. */
+    cmp     $FUNARG_SYM, %rax
+    jne     .try_compute_head
+    mov     %r12, %rdi
+    call    car                 /* (FUNARG innerfn captured_env) */
+    mov     %rax, %rdi
+    call    caddr               /* captured_env */
+    push    %rax
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    cadr                /* innerfn */
+    push    %rax
+    mov     %r12, %rdi
+    call    cdr                 /* raw args */
+    mov     %rax, %rdi
+    mov     %r13, %rsi          /* evaluate args under CURRENT env */
+    call    evlis
+    mov     %rax, %rdi
+    call    appq
+    mov     %rax, %rsi
+    pop     %rdi                /* innerfn */
+    call    cons                /* (innerfn . appq'd-args) */
+    mov     %rax, %rdi
+    pop     %rsi                /* captured_env */
+    call    eval
+    jmp     .eval_done
+
+.try_compute_head:
+    /* T -> apply[eval[fn;a];args;a] (Appendix B, ст.70, apply's own
+     * final fallback) -- car[e] is compound but headed by neither
+     * LABEL, LAMBDA, nor FUNARG: it must be an arbitrary expression
+     * that itself COMPUTES a function value at the call site, e.g.
+     * ((MAKE-ADDER 5) 3) or ((FUNCTION FOO) 3). Evaluate car[e]
+     * under the current env to find out what it actually is, then
+     * feed the result back through eval's own generic dispatch --
+     * the same reconstruct-and-re-eval mechanism used throughout
+     * this kernel (.plain_call, .try_funarg above). If the computed
+     * value is itself LABEL/LAMBDA/FUNARG-headed, this correctly
+     * recurses into the matching branch above; anything else reports
+     * CONDITION kind=UNBOUND the same way any other uncallable head
+     * already does, once the reconstructed call's own head is
+     * dispatched as a plain atom. */
+    mov     %r12, %rdi
+    call    car
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    push    %rax
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    evlis
+    mov     %rax, %rdi
+    call    appq
+    mov     %rax, %rsi
+    pop     %rdi
+    call    cons
+    mov     %rax, %rdi
+    mov     %r13, %rsi
     call    eval
 
 .eval_done:
@@ -1954,6 +2056,8 @@ print_sexpr:
 .equ LOGAND_SYM,     169
 .equ LOGXOR_SYM,     173
 .equ LEFTSHIFT_SYM,  177
+.equ FUNCTION_SYM,   181
+.equ FUNARG_SYM,     185
 
     .text
 
@@ -2059,6 +2163,10 @@ main:
     lea     sym_LOGXOR(%rip), %rdi
     call    intern
     lea     sym_LEFTSHIFT(%rip), %rdi
+    call    intern
+    lea     sym_FUNCTION(%rip), %rdi
+    call    intern
+    lea     sym_FUNARG(%rip), %rdi
     call    intern
 
     movq    $NIL_SYM, global_env(%rip)
@@ -2249,5 +2357,7 @@ sym_LOGOR:      .asciz "LOGOR"
 sym_LOGAND:     .asciz "LOGAND"
 sym_LOGXOR:     .asciz "LOGXOR"
 sym_LEFTSHIFT:  .asciz "LEFTSHIFT"
+sym_FUNCTION:   .asciz "FUNCTION"
+sym_FUNARG:     .asciz "FUNARG"
 
     .section .note.GNU-stack,"",@progbits
