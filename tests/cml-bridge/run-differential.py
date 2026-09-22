@@ -20,13 +20,8 @@ import tempfile
 
 
 DEFAULT_CML_SHA = "2a3e59fe04cc2d8a8d73c0bfbb5860bdb1f39854"
-DIRECT_FIXTURE_MAX = 18
 TRANSLATED_FIXTURES = {
     "19-label-recursion-mylen": Path("tests/cml-bridge/translated/19-label-recursion-mylen.lisp"),
-}
-BLOCKED_FIXTURES = {
-    "20-environment-shadowing",
-    "21-appq-plain-call-list-arg",
 }
 
 
