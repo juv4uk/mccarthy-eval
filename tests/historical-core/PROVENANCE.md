@@ -46,18 +46,23 @@ x86-64 бінарника (`tests/historical-core/run.sh`), не вручну.
 | `19-label-recursion-mylen` | `eq[caar[e];LABEL]→eval[cons[caddar[e];cdr[e]];cons[list[...];a]]`, рекурсія через власне ім'я | CACM 1960, ст.17 | reconstruction-derived witness |
 | `20-environment-shadowing` | вкладені `LABEL`/`LAMBDA` з однойменним параметром `X` -- environment як **динамічний** alist (не lexical closure) | CACM 1960, ст.18 (опис `a` як list of pairs) | reconstruction-derived witness |
 | `21-appq-plain-call-list-arg` | рекурсивний виклик з аргументом-списком не спотворюється при повторному вході в `eval` | CACM 1960, ст.16 (`apply[f;args]=eval[cons[f;appq[args]]];NIL]`) + README bugs («Відсутній appq») | **regression witness** |
+| `22-plain-call-unbound-function-no-crash` | виклик незв'язаного символу як функції повертає `NIL`, не крашить процес | reconstruction-derived witness (2026-09-22): `assoc`'s not-found sentinel (`NIL_SYM`) намагався бути застосований як функція через `plain_call`, що будувало `(NIL_SYM . args)` і переобчислювало його -- саме тому нове вираз знову резолвиться через той самий шлях, даючи нескінченну саморекурсію (stack overflow, segfault). Знайдено живцем через `(ENV)` після видалення ENV у #21 (баг був загальний, не ENV-специфічний -- `(NOTAFUNCTION ...)` крашив так само). Виправлено: `plain_call` тепер повертає `NIL` одразу, якщо `assoc` нічого не знайшов, замість намагання "викликати NIL" | **regression witness** |
 
 ## Adversarial verification (не тільки builder test)
 
-Обидва regression witness (`14`, `21`) перевірено не лише "проходить
-на поточному коді" -- у копії `mccarthy-kernel.s` (поза git, не
-закомічено) тимчасово повернено обидва історичні баги (прибрано
-спецперевірку `T_SYM` у `.eval_atom`, прибрано виклик `appq` у
-`.plain_call`), корпус перезібрано й перезапущено проти зламаної
-копії: рівно 3 fixtures впали (`14`, `19`, `21` -- `19` впав похідно,
-бо `MYLEN`'s catch-all `COND`-гілка сама залежить від `T`), інші 18
-не зачепило. Зламану копію видалено, трекований `mccarthy-kernel.s`
-не змінювався жодного разу.
+Усі три regression witness (`14`, `21`, `22`) перевірено не лише
+"проходить на поточному коді" -- у копії `mccarthy-kernel.s` (поза
+git, не закомічено) тимчасово повертались відповідні історичні баги
+(прибрано спецперевірку `T_SYM` у `.eval_atom`, прибрано виклик
+`appq` у `.plain_call`; окремо, для `22` -- прибрано перевірку
+`assoc`-not-found у `.plain_call`), корпус перезібрано й перезапущено
+проти зламаної копії щоразу: для `14`/`21` впало рівно 3 fixtures
+(`14`, `19`, `21` -- `19` впав похідно, бо `MYLEN`'s catch-all
+`COND`-гілка сама залежить від `T`); для `22` зламана копія дала
+реальний segfault (`timeout`-обгорнутий запуск, бо без фіксу баг --
+нескінченна рекурсія, не проста хибна відповідь). Зламані копії
+видалено щоразу, трекований `mccarthy-kernel.s` не змінювався жодного
+разу під час самої перевірки.
 
 ---
 
