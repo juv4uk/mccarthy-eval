@@ -142,6 +142,57 @@ eq_prim:
     sete    %al
     ret
 
+/* equal_prim(rdi=x, rsi=y) -> rax (1/0). LISP 1.5 Manual (1962),
+ * Appendix A: "equal is true if its arguments are the same
+ * S-expression... It uses eq on the atomic level and is recursive."
+ * Recursive, callee-saves r12/r13 like evlis/pair/append above. */
+equal_prim:
+    push    %r12
+    push    %r13
+    mov     %rdi, %r12
+    mov     %rsi, %r13
+    mov     %r12, %rdi
+    call    atomp
+    push    %rax
+    mov     %r13, %rdi
+    call    atomp
+    mov     %rax, %rcx
+    pop     %rax
+    cmp     %rax, %rcx
+    jne     .equal_prim_false   /* one is atomic, the other isn't */
+    test    %rax, %rax
+    jz      .equal_prim_recurse
+    mov     %r12, %rdi
+    mov     %r13, %rsi
+    call    eq_prim
+    jmp     .equal_prim_done
+.equal_prim_recurse:
+    mov     %r12, %rdi
+    call    car
+    push    %rax
+    mov     %r13, %rdi
+    call    car
+    mov     %rax, %rsi
+    pop     %rdi
+    call    equal_prim
+    test    %rax, %rax
+    jz      .equal_prim_false
+    mov     %r12, %rdi
+    call    cdr
+    push    %rax
+    mov     %r13, %rdi
+    call    cdr
+    mov     %rax, %rsi
+    pop     %rdi
+    call    equal_prim
+    jmp     .equal_prim_done
+.equal_prim_false:
+    xor     %eax, %eax
+.equal_prim_done:
+    pop     %r13
+    pop     %r12
+    ret
+
 /* fixnump(rdi=val) -> rax (1/0): bits[1:0] == 11 */
 fixnump:
     mov     %rdi, %rax
@@ -627,7 +678,7 @@ eval:
  * fixed-arity behavior exactly. */
 .try_plus:
     cmp     $PLUS_SYM, %r14
-    jne     .plain_call
+    jne     .try_null
     push    %rbx
     mov     %r12, %rdi
     call    cdr
@@ -655,6 +706,745 @@ eval:
     pop     %rdi
     call    mkfix
     pop     %rbx
+    jmp     .eval_done
+
+/* --- LISP 1.5 Appendix A primitives (issue #7 Phase 2), "стосується
+ * заліза" -- real x86-64 instructions, not LABEL/LAMBDA library code.
+ * Exact page citations: tests/historical-facility-extensions/PROVENANCE.md */
+
+.try_null:
+    cmp     $NULL_SYM, %r14
+    jne     .try_equal
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    cmp     $NIL_SYM, %rax
+    je      .null_true
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+.null_true:
+    mov     $T_SYM, %rax
+    jmp     .eval_done
+
+.try_equal:
+    cmp     $EQUAL_SYM, %r14
+    jne     .try_list
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rsi
+    pop     %rdi
+    call    equal_prim
+    test    %rax, %rax
+    jz      .equal_call_false
+    mov     $T_SYM, %rax
+    jmp     .eval_done
+.equal_call_false:
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+
+/* list[x1;...;xn] -- evlis already builds exactly this list. */
+.try_list:
+    cmp     $LIST_SYM, %r14
+    jne     .try_and
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    evlis
+    jmp     .eval_done
+
+/* and[x1;...;xn] -- FSUBR, short-circuit (not evlis: must stop at the
+ * first false without evaluating the rest). Value is T or NIL, per
+ * the Manual's own wording ("the value of and is false or true
+ * respectively"), not the last evaluated value. */
+.try_and:
+    cmp     $AND_SYM, %r14
+    jne     .try_or
+    push    %rbx
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rbx
+.and_loop:
+    cmp     $NIL_SYM, %rbx
+    je      .and_true
+    mov     %rbx, %rdi
+    call    car
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    cmp     $NIL_SYM, %rax
+    je      .and_false
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+    jmp     .and_loop
+.and_true:
+    mov     $T_SYM, %rax
+    jmp     .and_done
+.and_false:
+    mov     $NIL_SYM, %rax
+.and_done:
+    pop     %rbx
+    jmp     .eval_done
+
+.try_or:
+    cmp     $OR_SYM, %r14
+    jne     .try_not
+    push    %rbx
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rbx
+.or_loop:
+    cmp     $NIL_SYM, %rbx
+    je      .or_false
+    mov     %rbx, %rdi
+    call    car
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    cmp     $NIL_SYM, %rax
+    jne     .or_true
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+    jmp     .or_loop
+.or_true:
+    mov     $T_SYM, %rax
+    jmp     .or_done
+.or_false:
+    mov     $NIL_SYM, %rax
+.or_done:
+    pop     %rbx
+    jmp     .eval_done
+
+.try_not:
+    cmp     $NOT_SYM, %r14
+    jne     .try_rplaca
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    cmp     $NIL_SYM, %rax
+    je      .not_true
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+.not_true:
+    mov     $T_SYM, %rax
+    jmp     .eval_done
+
+/* rplaca[x;y] / rplacd[x;y] -- pseudo-functions, destructive. Guarded
+ * the same way car/cdr already guard: a non-pointer (bit0==1) is left
+ * untouched rather than dereferenced, same fallback philosophy as the
+ * rest of this kernel. Value is x (the modified pair), conventional. */
+.try_rplaca:
+    cmp     $RPLACA_SYM, %r14
+    jne     .try_rplacd
+    push    %rbx
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rbx
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rsi
+    mov     %rbx, %rdi
+    call    atomp
+    test    %rax, %rax
+    jnz     .rplaca_done
+    mov     %rsi, (%rbx)
+.rplaca_done:
+    mov     %rbx, %rax
+    pop     %rbx
+    jmp     .eval_done
+
+.try_rplacd:
+    cmp     $RPLACD_SYM, %r14
+    jne     .try_minus
+    push    %rbx
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rbx
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rsi
+    mov     %rbx, %rdi
+    call    atomp
+    test    %rax, %rax
+    jnz     .rplacd_done
+    mov     %rsi, 8(%rbx)
+.rplacd_done:
+    mov     %rbx, %rax
+    pop     %rbx
+    jmp     .eval_done
+
+.try_minus:
+    cmp     $MINUS_SYM, %r14
+    jne     .try_add1
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    neg     %rax
+    mov     %rax, %rdi
+    call    mkfix
+    jmp     .eval_done
+
+.try_add1:
+    cmp     $ADD1_SYM, %r14
+    jne     .try_sub1
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    inc     %rax
+    mov     %rax, %rdi
+    call    mkfix
+    jmp     .eval_done
+
+.try_sub1:
+    cmp     $SUB1_SYM, %r14
+    jne     .try_max
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    dec     %rax
+    mov     %rax, %rdi
+    call    mkfix
+    jmp     .eval_done
+
+/* max/min[x1;...;xn] -- no neutral identity element is defined for
+ * these (unlike plus/times), so the first evaluated argument seeds
+ * the fold; an empty argument list is undefined by the Manual and
+ * degrades harmlessly here rather than crashing. */
+.try_max:
+    cmp     $MAX_SYM, %r14
+    jne     .try_min
+    push    %rbx
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    evlis
+    mov     %rax, %rbx
+    mov     %rbx, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    getfix
+    push    %rax
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+.max_loop:
+    cmp     $NIL_SYM, %rbx
+    je      .max_done
+    mov     %rbx, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    getfix
+    pop     %rcx
+    cmp     %rcx, %rax
+    cmovg   %rax, %rcx
+    push    %rcx
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+    jmp     .max_loop
+.max_done:
+    pop     %rdi
+    call    mkfix
+    pop     %rbx
+    jmp     .eval_done
+
+.try_min:
+    cmp     $MIN_SYM, %r14
+    jne     .try_recip
+    push    %rbx
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    evlis
+    mov     %rax, %rbx
+    mov     %rbx, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    getfix
+    push    %rax
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+.min_loop:
+    cmp     $NIL_SYM, %rbx
+    je      .min_done
+    mov     %rbx, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    getfix
+    pop     %rcx
+    cmp     %rcx, %rax
+    cmovl   %rax, %rcx
+    push    %rcx
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+    jmp     .min_loop
+.min_done:
+    pop     %rdi
+    call    mkfix
+    pop     %rbx
+    jmp     .eval_done
+
+/* recip[x] = quotient[1;x] -- exactly the Manual's own formula; for a
+ * fixnum-only kernel this already gives 0 for |x|>1 by construction
+ * ("the reciprocal of any fixed point number is defined as zero"). */
+.try_recip:
+    cmp     $RECIP_SYM, %r14
+    jne     .try_quotient
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    mov     %rax, %rcx
+    mov     $1, %rax
+    cqto
+    idiv    %rcx
+    mov     %rax, %rdi
+    call    mkfix
+    jmp     .eval_done
+
+.try_quotient:
+    cmp     $QUOTIENT_SYM, %r14
+    jne     .try_remainder
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    mov     %rax, %rcx
+    pop     %rax
+    cqto
+    idiv    %rcx
+    mov     %rax, %rdi
+    call    mkfix
+    jmp     .eval_done
+
+.try_remainder:
+    cmp     $REMAINDER_SYM, %r14
+    jne     .try_divide
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    mov     %rax, %rcx
+    pop     %rax
+    cqto
+    idiv    %rcx
+    mov     %rdx, %rdi
+    call    mkfix
+    jmp     .eval_done
+
+/* divide[x;y] = cons[quotient[x;y];remainder[x;y]] -- exact Manual
+ * formula, one idiv gives both halves directly. */
+.try_divide:
+    cmp     $DIVIDE_SYM, %r14
+    jne     .try_expt
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    mov     %rax, %rcx
+    pop     %rax
+    cqto
+    idiv    %rcx
+    push    %rdx
+    mov     %rax, %rdi
+    call    mkfix
+    mov     %rax, %rdi
+    pop     %rax
+    push    %rdi
+    mov     %rax, %rdi
+    call    mkfix
+    mov     %rax, %rsi
+    pop     %rdi
+    call    cons
+    jmp     .eval_done
+
+/* expt[x;y] = x^y, y>=0, iterative multiplication (fixed-point only,
+ * exactly as the Manual specifies for this case). */
+.try_expt:
+    cmp     $EXPT_SYM, %r14
+    jne     .try_lessp
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    mov     %rax, %rcx
+    pop     %rdx
+    mov     $1, %rax
+.expt_loop:
+    test    %rcx, %rcx
+    jz      .expt_done
+    imul    %rdx, %rax
+    dec     %rcx
+    jmp     .expt_loop
+.expt_done:
+    mov     %rax, %rdi
+    call    mkfix
+    jmp     .eval_done
+
+.try_lessp:
+    cmp     $LESSP_SYM, %r14
+    jne     .try_greaterp
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    pop     %rcx
+    cmp     %rax, %rcx
+    jl      .lessp_true
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+.lessp_true:
+    mov     $T_SYM, %rax
+    jmp     .eval_done
+
+.try_greaterp:
+    cmp     $GREATERP_SYM, %r14
+    jne     .try_onep
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    pop     %rcx
+    cmp     %rax, %rcx
+    jg      .greaterp_true
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+.greaterp_true:
+    mov     $T_SYM, %rax
+    jmp     .eval_done
+
+.try_onep:
+    cmp     $ONEP_SYM, %r14
+    jne     .try_minusp
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    cmp     $1, %rax
+    je      .onep_true
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+.onep_true:
+    mov     $T_SYM, %rax
+    jmp     .eval_done
+
+.try_minusp:
+    cmp     $MINUSP_SYM, %r14
+    jne     .try_numberp
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    test    %rax, %rax
+    js      .minusp_true
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+.minusp_true:
+    mov     $T_SYM, %rax
+    jmp     .eval_done
+
+.try_numberp:
+    cmp     $NUMBERP_SYM, %r14
+    jne     .try_fixp
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    fixnump
+    test    %rax, %rax
+    jz      .numberp_false
+    mov     $T_SYM, %rax
+    jmp     .eval_done
+.numberp_false:
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+
+/* fixp[x] -- this kernel is fixnum-only, so fixp and numberp coincide
+ * exactly (there is no separate floating-point type to distinguish
+ * them from, per floatp below). */
+.try_fixp:
+    cmp     $FIXP_SYM, %r14
+    jne     .try_floatp
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    fixnump
+    test    %rax, %rax
+    jz      .fixp_false
+    mov     $T_SYM, %rax
+    jmp     .eval_done
+.fixp_false:
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+
+/* floatp[x] -- always NIL: this kernel implements no floating-point
+ * type at all (an honest, real boundary, not a silent omission; see
+ * README.md/ZEROP's own fixed-point-only narrowing for the same
+ * reasoning). The argument is still evaluated for consistency with
+ * every other predicate here, even though the answer never depends
+ * on it. */
+.try_floatp:
+    cmp     $FLOATP_SYM, %r14
+    jne     .try_logor
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     $NIL_SYM, %rax
+    jmp     .eval_done
+
+.try_logor:
+    cmp     $LOGOR_SYM, %r14
+    jne     .try_logand
+    push    %rbx
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    evlis
+    mov     %rax, %rbx
+    mov     $0, %rax
+    push    %rax
+.logor_loop:
+    cmp     $NIL_SYM, %rbx
+    je      .logor_done
+    mov     %rbx, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    getfix
+    pop     %rcx
+    or      %rax, %rcx
+    push    %rcx
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+    jmp     .logor_loop
+.logor_done:
+    pop     %rdi
+    call    mkfix
+    pop     %rbx
+    jmp     .eval_done
+
+.try_logand:
+    cmp     $LOGAND_SYM, %r14
+    jne     .try_logxor
+    push    %rbx
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    evlis
+    mov     %rax, %rbx
+    mov     $-1, %rax
+    push    %rax
+.logand_loop:
+    cmp     $NIL_SYM, %rbx
+    je      .logand_done
+    mov     %rbx, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    getfix
+    pop     %rcx
+    and     %rax, %rcx
+    push    %rcx
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+    jmp     .logand_loop
+.logand_done:
+    pop     %rdi
+    call    mkfix
+    pop     %rbx
+    jmp     .eval_done
+
+.try_logxor:
+    cmp     $LOGXOR_SYM, %r14
+    jne     .try_leftshift
+    push    %rbx
+    mov     %r12, %rdi
+    call    cdr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    evlis
+    mov     %rax, %rbx
+    mov     $0, %rax
+    push    %rax
+.logxor_loop:
+    cmp     $NIL_SYM, %rbx
+    je      .logxor_done
+    mov     %rbx, %rdi
+    call    car
+    mov     %rax, %rdi
+    call    getfix
+    pop     %rcx
+    xor     %rax, %rcx
+    push    %rcx
+    mov     %rbx, %rdi
+    call    cdr
+    mov     %rax, %rbx
+    jmp     .logxor_loop
+.logxor_done:
+    pop     %rdi
+    call    mkfix
+    pop     %rbx
+    jmp     .eval_done
+
+/* leftshift[x;n] = x * 2^n; negative n shifts right (Manual's own
+ * wording). Variable-count shl/sar via %cl, baseline x86-64. */
+.try_leftshift:
+    cmp     $LEFTSHIFT_SYM, %r14
+    jne     .plain_call
+    mov     %r12, %rdi
+    call    cadr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    push    %rax
+    mov     %r12, %rdi
+    call    caddr
+    mov     %rax, %rdi
+    mov     %r13, %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    getfix
+    mov     %rax, %rcx
+    pop     %rax
+    test    %rcx, %rcx
+    js      .leftshift_right
+    shl     %cl, %rax
+    jmp     .leftshift_done
+.leftshift_right:
+    neg     %rcx
+    sar     %cl, %rax
+.leftshift_done:
+    mov     %rax, %rdi
+    call    mkfix
     jmp     .eval_done
 
 .plain_call:
@@ -1107,6 +1897,40 @@ print_sexpr:
 .equ TIMES_SYM,      53
 .equ DIFFERENCE_SYM, 57
 .equ PLUS_SYM,       61
+/* LISP 1.5 Programmer's Manual (1962), Appendix A, "Functions and
+ * Constants in the LISP System... as of August 1962" -- real,
+ * physical x86-64 primitives (not LABEL/LAMBDA library functions;
+ * those belong in a .lisp library file, not here). Exact page
+ * citations in tests/historical-facility-extensions/PROVENANCE.md. */
+.equ NULL_SYM,      65
+.equ EQUAL_SYM,      69
+.equ LIST_SYM,       73
+.equ AND_SYM,        77
+.equ OR_SYM,         81
+.equ NOT_SYM,        85
+.equ RPLACA_SYM,     89
+.equ RPLACD_SYM,     93
+.equ MINUS_SYM,      97
+.equ ADD1_SYM,       101
+.equ SUB1_SYM,       105
+.equ MAX_SYM,        109
+.equ MIN_SYM,        113
+.equ RECIP_SYM,      117
+.equ QUOTIENT_SYM,   121
+.equ REMAINDER_SYM,  125
+.equ DIVIDE_SYM,     129
+.equ EXPT_SYM,       133
+.equ LESSP_SYM,      137
+.equ GREATERP_SYM,   141
+.equ ONEP_SYM,       145
+.equ MINUSP_SYM,     149
+.equ NUMBERP_SYM,    153
+.equ FIXP_SYM,       157
+.equ FLOATP_SYM,     161
+.equ LOGOR_SYM,      165
+.equ LOGAND_SYM,     169
+.equ LOGXOR_SYM,     173
+.equ LEFTSHIFT_SYM,  177
 
     .text
 
@@ -1154,6 +1978,64 @@ main:
     lea     sym_DIFFERENCE(%rip), %rdi
     call    intern
     lea     sym_PLUS(%rip), %rdi
+    call    intern
+    lea     sym_NULL(%rip), %rdi
+    call    intern
+    lea     sym_EQUAL(%rip), %rdi
+    call    intern
+    lea     sym_LIST(%rip), %rdi
+    call    intern
+    lea     sym_AND(%rip), %rdi
+    call    intern
+    lea     sym_OR(%rip), %rdi
+    call    intern
+    lea     sym_NOT(%rip), %rdi
+    call    intern
+    lea     sym_RPLACA(%rip), %rdi
+    call    intern
+    lea     sym_RPLACD(%rip), %rdi
+    call    intern
+    lea     sym_MINUS(%rip), %rdi
+    call    intern
+    lea     sym_ADD1(%rip), %rdi
+    call    intern
+    lea     sym_SUB1(%rip), %rdi
+    call    intern
+    lea     sym_MAX(%rip), %rdi
+    call    intern
+    lea     sym_MIN(%rip), %rdi
+    call    intern
+    lea     sym_RECIP(%rip), %rdi
+    call    intern
+    lea     sym_QUOTIENT(%rip), %rdi
+    call    intern
+    lea     sym_REMAINDER(%rip), %rdi
+    call    intern
+    lea     sym_DIVIDE(%rip), %rdi
+    call    intern
+    lea     sym_EXPT(%rip), %rdi
+    call    intern
+    lea     sym_LESSP(%rip), %rdi
+    call    intern
+    lea     sym_GREATERP(%rip), %rdi
+    call    intern
+    lea     sym_ONEP(%rip), %rdi
+    call    intern
+    lea     sym_MINUSP(%rip), %rdi
+    call    intern
+    lea     sym_NUMBERP(%rip), %rdi
+    call    intern
+    lea     sym_FIXP(%rip), %rdi
+    call    intern
+    lea     sym_FLOATP(%rip), %rdi
+    call    intern
+    lea     sym_LOGOR(%rip), %rdi
+    call    intern
+    lea     sym_LOGAND(%rip), %rdi
+    call    intern
+    lea     sym_LOGXOR(%rip), %rdi
+    call    intern
+    lea     sym_LEFTSHIFT(%rip), %rdi
     call    intern
 
     movq    $NIL_SYM, global_env(%rip)
@@ -1315,5 +2197,34 @@ sym_ZEROP:      .asciz "ZEROP"
 sym_TIMES:      .asciz "TIMES"
 sym_DIFFERENCE: .asciz "DIFFERENCE"
 sym_PLUS:       .asciz "PLUS"
+sym_NULL:       .asciz "NULL"
+sym_EQUAL:      .asciz "EQUAL"
+sym_LIST:       .asciz "LIST"
+sym_AND:        .asciz "AND"
+sym_OR:         .asciz "OR"
+sym_NOT:        .asciz "NOT"
+sym_RPLACA:     .asciz "RPLACA"
+sym_RPLACD:     .asciz "RPLACD"
+sym_MINUS:      .asciz "MINUS"
+sym_ADD1:       .asciz "ADD1"
+sym_SUB1:       .asciz "SUB1"
+sym_MAX:        .asciz "MAX"
+sym_MIN:        .asciz "MIN"
+sym_RECIP:      .asciz "RECIP"
+sym_QUOTIENT:   .asciz "QUOTIENT"
+sym_REMAINDER:  .asciz "REMAINDER"
+sym_DIVIDE:     .asciz "DIVIDE"
+sym_EXPT:       .asciz "EXPT"
+sym_LESSP:      .asciz "LESSP"
+sym_GREATERP:   .asciz "GREATERP"
+sym_ONEP:       .asciz "ONEP"
+sym_MINUSP:     .asciz "MINUSP"
+sym_NUMBERP:    .asciz "NUMBERP"
+sym_FIXP:       .asciz "FIXP"
+sym_FLOATP:     .asciz "FLOATP"
+sym_LOGOR:      .asciz "LOGOR"
+sym_LOGAND:     .asciz "LOGAND"
+sym_LOGXOR:     .asciz "LOGXOR"
+sym_LEFTSHIFT:  .asciz "LEFTSHIFT"
 
     .section .note.GNU-stack,"",@progbits
