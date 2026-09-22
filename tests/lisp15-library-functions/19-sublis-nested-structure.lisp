@@ -1,0 +1,1 @@
+(SUBLIS (CONS (CONS (QUOTE A) (QUOTE Z)) NIL) (QUOTE (A B A (A C))))

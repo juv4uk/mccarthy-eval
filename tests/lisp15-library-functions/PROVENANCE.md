@@ -4,7 +4,7 @@
 примітиви), функції тут -- звичайний Lisp-код через `LABEL`/`LAMBDA`
 у `startup.lisp`, що спирається на примітиви з попередньої частини
 (`NULL`, `EQUAL`, `ATOM`, `CONS`, `CAR`, `CDR`). Джерело те саме:
-**LISP 1.5 Programmer's Manual (1962), Appendix A** (ст.67-69).
+**LISP 1.5 Programmer's Manual (1962), Appendix A** (ст.61-63).
 
 ## Реальна знахідка: `SUBST` у `startup.lisp` не відповідав формулі
 
@@ -12,7 +12,7 @@
 - перевіряв `(ATOM Z)` **раніше** за рівність із `Y`;
 - використовував `EQ` (pointer identity), не `EQUAL` (структурна рівність).
 
-Точна формула з Appendix A, ст.67:
+Точна формула з Appendix A, ст.61:
 
 ```
 subst[x;y;z] = [equal[y;z] -> x; atom[z] -> z;
@@ -47,32 +47,79 @@ crashes" (`plain_call` тепер тихо повертає `NIL` замість
 
 | Fixture | Функція | M-вираз (Appendix A) |
 |---|---|---|
-| `01` | `SUBST`, атомарна ціль | `subst[x;y;z]`, ст.67 |
+| `01` | `SUBST`, атомарна ціль | `subst[x;y;z]`, ст.61 |
 | `02` | `SUBST`, структурна ціль (regression witness) | той самий, демонструє фікс |
-| `03`/`04` | `MEMBER` | `member[x;l] = [null[l]→NIL; equal[x;car[l]]→T; T→member[x;cdr[l]]]`, ст.68 |
-| `05`/`06` | `APPEND` | `append[x;y] = [null[x]→y; T→cons[car[x];append[cdr[x];y]]]`, ст.68 |
-| `07` | `MAPLIST` -- f отримує ЛИШОК списку, не елемент | `maplist[x;f] = [null[x]→NIL; T→cons[f[x];maplist[cdr[x];f]]]`, ст.69 |
+| `03`/`04` | `MEMBER` | `member[x;l] = [null[l]→NIL; equal[x;car[l]]→T; T→member[x;cdr[l]]]`, ст.62 |
+| `05`/`06` | `APPEND` | `append[x;y] = [null[x]→y; T→cons[car[x];append[cdr[x];y]]]`, ст.62 |
+| `07` | `MAPLIST` -- f отримує ЛИШОК списку, не елемент | `maplist[x;f] = [null[x]→NIL; T→cons[f[x];maplist[cdr[x];f]]]`, ст.63 |
 | `08` | `MAPLIST`, порожній список | той самий |
-| `09` | `PAIR` | `pair[x;y]` (ст.66) -- джерело використовує `PROG`/`GO` (kernel їх не має); переписано як пряму рекурсію, семантично еквівалентну, без перевірки довжини (джерело кидає `error` при різній довжині списків -- у нас немає error-механізму окрім CONDITION-діагностики) |
-| `10`/`11` | `SASSOC` -- пошук пари за ключем, з fallback-функцією `u` при відсутності | `sassoc[x;y;u]`, ст.66; порівняння через `EQ` (reconstruction choice -- джерело не уточнює `eq` чи `equal`, `EQ` узгоджено з внутрішнім `assoc` цього kernel) |
-| `12`/`13` | `SEARCH` -- три функції-параметри одночасно (`p`, `f`, `u`) | `search[x;p;f;u]`, ст.69: "looks through a list x for an element that has property p... f[element] is the value... u[x] otherwise (x is NIL)" |
-| `14` | `REVERSE` | `reverse[l]`, ст.67 -- джерело `PROG`-based; переписано через акумулятор (`REVERSE-ACC`), хвостова рекурсія, той самий результат |
-| `15`/`16` | `LENGTH` | ст.67, "number of items in list x... NIL has length 0"; пряма рекурсія через `ADD1` |
-| `17` | `COPY` | `copy[x] = [null[x]→NIL;atom[x]→x;T→cons[copy[car[x]];copy[cdr[x]]]]`, ст.67 |
+| `09` | `PAIR` | `pair[x;y]` (ст.60) -- джерело використовує `PROG`/`GO` (kernel їх не має); переписано як пряму рекурсію, семантично еквівалентну, без перевірки довжини (джерело кидає `error` при різній довжині списків -- у нас немає error-механізму окрім CONDITION-діагностики) |
+| `10`/`11` | `SASSOC` -- пошук пари за ключем, з fallback-функцією `u` при відсутності | `sassoc[x;y;u]`, ст.60; порівняння через `EQ` (reconstruction choice -- джерело не уточнює `eq` чи `equal`, `EQ` узгоджено з внутрішнім `assoc` цього kernel) |
+| `12`/`13` | `SEARCH` -- три функції-параметри одночасно (`p`, `f`, `u`) | `search[x;p;f;u]`, ст.63: "looks through a list x for an element that has property p... f[element] is the value... u[x] otherwise (x is NIL)" |
+| `14` | `REVERSE` | `reverse[l]`, ст.61 -- джерело `PROG`-based; переписано через акумулятор (`REVERSE-ACC`), хвостова рекурсія, той самий результат |
+| `15`/`16` | `LENGTH` | ст.61, "number of items in list x... NIL has length 0"; пряма рекурсія через `ADD1` |
+| `17` | `COPY` | `copy[x] = [null[x]→NIL;atom[x]→x;T→cons[copy[car[x]];copy[cdr[x]]]]`, ст.61 |
 
-## Свідомо відкладено: `SUBLIS`
+## `SUBLIS` -- реалізовано через прямий helper, не через generic `search`
 
-`sublis[x;y]` у джерелі (ст.67) викликає `search` із **трьома inline
-λ-виразами**, сконструйованими прямо в місці виклику (`k[[j];...]`).
-Наш kernel підтримує передачу функції як параметра лише для
-**іменованих, DEFINE'd** top-level функцій (той самий механізм, що
-й `PAIRUP` у `listutils.lisp`, `WRAPFIRST` тут вище) -- вираз
-`(LAMBDA ...)` як значення, сконструйоване на льоту й одразу передане
-як аргумент, не працює (`eval` розпізнає `LAMBDA` лише як голову
-безпосереднього виклику, ніколи як значення; підтверджено в
-`docs/S0-SEED-CONTRACT.md`). `SUBLIS` можна реалізувати, попередньо
-іменувавши кожен inline-вираз окремим `DEFINE`, але це вже не пряма
-трансляція формули -- відкладено, не мовчки пропущено.
+Точна формула (ст.61 Appendix A, перевірено напряму по зображенню
+сторінки, не по OCR -- усі цитати сторінок у цьому й сусідніх
+provenance-файлах були спершу зняті з внутрішнього page-break
+лічильника `pdftotext`, який виявився систематично зсунутим на +6
+відносно реального друкованого номера сторінки; виправлено скрізь
+після цієї звірки):
+
+```
+sublis[x;y] = [null[x] -> y; null[y] -> y;
+               T -> search[x;
+                    λ[[j];equal[y;caar[j]]];
+                    λ[[j];cdar[j]];
+                    λ[[j];[atom[y] -> y;
+                           T -> cons[sublis[x;car[y]];sublis[x;cdr[y]]]]]]]
+```
+
+**Реальна знахідка**: внутрішня "not-found" λ у джерелі ігнорує свій
+власний параметр `j` і натомість використовує `y` із зовнішньої
+області видимості `sublis` -- це не просто "анонімна лямбда як
+аргумент", а справжня **lexical-closure залежність** (той самий gap,
+що й відсутність first-class функцій, `docs/S0-SEED-CONTRACT.md`).
+Через `SEARCH`'s власну сигнатуру (`u` викликається рівно з одним
+аргументом -- вичерпаним, тепер-NIL списком) немає способу протягнути
+`y` крізь generic `SEARCH` без справжнього closure.
+
+**Рішення**: переписано напряму, без `SEARCH`, як окремий рекурсивний
+helper `SUBLIS-SCAN`, що передає `y` явним параметром (не
+захопленням):
+
+```
+SUBLIS-SCAN(alist, fullx, y) =
+  [NULL(alist) -> [ATOM(y) -> y; T -> CONS(SUBLIS-SCAN(fullx,fullx,CAR y),
+                                            SUBLIS-SCAN(fullx,fullx,CDR y))]]
+  [EQUAL(y, CAR(CAR alist)) -> CDR(CAR alist)]
+  [T -> SUBLIS-SCAN(CDR alist, fullx, y)]
+SUBLIS(x,y) = [NULL(x) -> y; T -> SUBLIS-SCAN(x,x,y)]
+```
+
+Це не спрощення поведінки -- лише інший, closure-вільний шлях до
+того самого результату (кожен елемент `y` рекурсивно перевіряється
+проти повного `x`, замінюється при структурному збігу через `EQUAL`,
+інакше рекурсія в `CAR`/`CDR`). Перевірено: `SUBLIS` на `{X→1,Y→2}`
+у `(PLUS X (TIMES Y X))` дає `(PLUS 1 (TIMES 2 1))`; вкладена
+структура `(A B A (A C))` з `{A→Z}` дає `(Z B Z (Z C))`.
+
+### Побічна знахідка: reader не читає dotted-pair синтаксис на вході
+
+Перший тест `SUBLIS` писав пари літерально як `(QUOTE ((X . 1) ...))`
+-- дав неправильний результат (`(. 1)` замість `1`). Причина: цей
+kernel's reader **не парсить `.` як спеціальний dotted-pair
+роздільник під час читання**, хоча printer виробляє саме такий
+синтаксис на виході. `(X . 1)` читається як звичайний **3-елементний
+список** `(X . 1)` = `X`, символ `.`, `1` -- не як справжня пара.
+Асиметрія printer/reader, задокументована окремо в `README.md`.
+Виправлено в тестах: пари будуються через `(CONS ... )` під час
+виконання (так само, як уже робить `PAIR`/`SASSOC`/`DIVIDE` всюди в
+цьому репо) -- не через літеральний dot-синтаксис у джерельному
+тексті.
 
 ## Adversarial verification
 
