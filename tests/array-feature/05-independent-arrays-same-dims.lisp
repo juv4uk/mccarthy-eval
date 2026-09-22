@@ -1,0 +1,4 @@
+(ARRAY ((ONE (3 3) LIST) (TWO (3 3) LIST)))
+(ONE (QUOTE SET) (QUOTE FIRST) 1 1)
+(ONE 1 1)
+(TWO 1 1)
