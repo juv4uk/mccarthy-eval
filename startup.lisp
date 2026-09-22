@@ -87,3 +87,18 @@
       (COND ((NULL X) NIL)
             ((ATOM X) X)
             (T (CONS (COPY (CAR X)) (COPY (CDR X))))))))
+
+(DEFINE SUBLIS-SCAN
+  (LABEL SUBLIS-SCAN
+    (LAMBDA (ALIST FULLX Y)
+      (COND ((NULL ALIST)
+             (COND ((ATOM Y) Y)
+                   (T (CONS (SUBLIS-SCAN FULLX FULLX (CAR Y))
+                            (SUBLIS-SCAN FULLX FULLX (CDR Y))))))
+            ((EQUAL Y (CAR (CAR ALIST))) (CDR (CAR ALIST)))
+            (T (SUBLIS-SCAN (CDR ALIST) FULLX Y))))))
+
+(DEFINE SUBLIS
+  (LAMBDA (X Y)
+    (COND ((NULL X) Y)
+          (T (SUBLIS-SCAN X X Y)))))
