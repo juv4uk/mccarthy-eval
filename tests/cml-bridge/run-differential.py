@@ -9,10 +9,10 @@ the temporary Rust driver calls CML's own parser/lower/backend/witness APIs.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -60,27 +60,49 @@ def git(repo: Path, *args: str) -> str:
     return checked(["git", "-C", str(repo), *args])
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def git_blob_sha(repo: Path, path: Path) -> str:
     return git(repo, "hash-object", str(path))
 
 
-def fixture_matrix_status(matrix_path: Path, fixture_base: str) -> str:
+def fixture_metadata(matrix_path: Path, fixture_base: str) -> tuple[str, str]:
     text = matrix_path.read_text(encoding="utf-8")
-    matches = [line for line in text.splitlines() if f"| {fixture_base} " in line]
+    matches = []
+    for line in text.splitlines():
+        if not line.startswith("|") or line.startswith("|---"):
+            continue
+        columns = [column.strip() for column in line.split("|")[1:-1]]
+        if len(columns) != 4:
+            continue
+        matrix_fixtures = {
+            token.strip()
+            for token in re.split(r"[/,]", columns[0])
+            if token.strip()
+        }
+        if fixture_base in matrix_fixtures:
+            matches.append((columns[2], columns[3]))
+
     if len(matches) != 1:
         raise RunnerError(
             f"admission matrix must contain exactly one row for {fixture_base}, got {len(matches)}"
         )
-    line = matches[0]
-    return "blocked" if "**blocked" in line else "candidate"
+
+    provenance, status = matches[0]
+    return (
+        provenance,
+        "blocked" if "**blocked" in status else "candidate",
+    )
+
+def translation_source_for(fixture_base: str, repo_root: Path, translations_path: Path) -> Path | None:
+    translated = TRANSLATED_FIXTURES.get(fixture_base)
+    if translated is None:
+        return None
+    metadata = translations_path.read_text(encoding="utf-8")
+    if fixture_base not in metadata:
+        raise RunnerError(f"translation metadata does not mention {fixture_base}")
+    path = repo_root / translated
+    if not path.is_file():
+        raise RunnerError(f"translation source is missing: {path}")
+    return path
 
 
 def sanitize_output(value: str) -> str:
@@ -193,7 +215,7 @@ cml = {{ path = {json.dumps(str(cml_repo))} }}
         records: list[dict[str, object]] = []
         for fixture in fixture_paths:
             fixture_base = fixture.stem
-            matrix_status = fixture_matrix_status(matrix, fixture_base)
+            historical_provenance, matrix_status = fixture_metadata(matrix, fixture_base)
             fixture_sha = git_blob_sha(repo_root, fixture)
             historical = run([str(kernel), str(fixture)], cwd=repo_root)
             if historical.returncode != 0:
@@ -202,19 +224,14 @@ cml = {{ path = {json.dumps(str(cml_repo))} }}
                     f"{historical.returncode}\n{historical.stderr}"
                 )
             historical_actual = sanitize_output(historical.stdout)
-            source_path = fixture
-            translation_sha = ""
-
-            if fixture_base in TRANSLATED_FIXTURES:
-                source_path = repo_root / TRANSLATED_FIXTURES[fixture_base]
-                if fixture_base not in translations.read_text(encoding="utf-8"):
-                    raise RunnerError(f"translation metadata does not mention {fixture_base}")
-                translation_sha = git_blob_sha(repo_root, source_path)
+            translation = translation_source_for(fixture_base, repo_root, translations)
+            source_path = translation or fixture
+            translation_sha = git_blob_sha(repo_root, translation) if translation else ""
 
             record: dict[str, object] = {
                 "fixture": str(fixture.relative_to(repo_root)),
                 "fixture_sha": fixture_sha,
-                "historical_provenance": "unknown",
+                "historical_provenance": historical_provenance,
                 "cml_source": (
                     str(source_path.relative_to(repo_root))
                     if matrix_status != "blocked"
@@ -229,9 +246,11 @@ cml = {{ path = {json.dumps(str(cml_repo))} }}
                 "witness_b_output": None,
                 "status": None,
                 "notes": [],
+                "qemu_status": "not-run",
+                "qemu_reason": "CML witness bridge currently executes its native child process; no QEMU executor is exposed by the pinned CML API.",
             }
 
-            if matrix_status == "blocked" or fixture_base in BLOCKED_FIXTURES:
+            if matrix_status == "blocked":
                 record["status"] = "blocked"
                 record["notes"] = ["Explicitly blocked by the current admission matrix; separate witness issue required."]
                 records.append(record)
