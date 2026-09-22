@@ -1057,50 +1057,8 @@ print_sexpr:
 .equ TIMES_SYM,      53
 .equ DIFFERENCE_SYM, 57
 .equ PLUS_SYM,       61
-.equ ENV_SYM,         65  /* (ENV) -- top-level-only, same as DEFINE,
-                              handled in process_buffer, not eval */
 
     .text
-
-/* print_env() -- prints the names (only, not their definitions) of
- * everything bound so far via DEFINE, walking global_env, which is
- * literally just the alist DEFINE has been consing onto -- no new
- * data structure, this only ever reads what already exists. Built-in
- * special forms (QUOTE/ATOM/EQ/COND/CAR/CDR/CONS/LABEL/LAMBDA/DEFINE/
- * ZEROP/TIMES/DIFFERENCE/PLUS/ENV) are NOT listed here -- they aren't
- * stored as data anywhere, they're symbol comparisons hardwired into
- * eval's own dispatch, so there's nothing to walk for them. */
-print_env:
-    push    %r12
-    lea     fmt_open(%rip), %rdi
-    xor     %eax, %eax
-    call    printf
-    mov     global_env(%rip), %r12
-.pe_loop:
-    cmp     $NIL_SYM, %r12
-    je      .pe_close
-    mov     %r12, %rdi
-    call    car                  /* pair = car(alist-node) */
-    mov     %rax, %rdi
-    call    car                  /* name = car(pair) */
-    mov     %rax, %rdi
-    call    print_sym_name
-    lea     fmt_space(%rip), %rdi
-    xor     %eax, %eax
-    call    printf
-    mov     %r12, %rdi
-    call    cdr
-    mov     %rax, %r12
-    jmp     .pe_loop
-.pe_close:
-    lea     fmt_close(%rip), %rdi
-    xor     %eax, %eax
-    call    printf
-    lea     fmt_newline(%rip), %rdi
-    xor     %eax, %eax
-    call    printf
-    pop     %r12
-    ret
 
 main:
     push    %rbx
@@ -1146,8 +1104,6 @@ main:
     lea     sym_DIFFERENCE(%rip), %rdi
     call    intern
     lea     sym_PLUS(%rip), %rdi
-    call    intern
-    lea     sym_ENV(%rip), %rdi
     call    intern
 
     movq    $NIL_SYM, global_env(%rip)
@@ -1248,19 +1204,13 @@ process_buffer:
     call    read_sexpr
     mov     %rax, %rbx           /* the top-level form just read */
 
-    /* is it (DEFINE name expr) or (ENV) ? -- both are top-level-only
-     * forms eval never sees, same reasoning as DEFINE already had. */
+    /* is it (DEFINE name expr)? -- DEFINE is top-level-only. */
     mov     %rbx, %rdi
     call    atomp
     test    %rax, %rax
     jnz     .pb_eval_plain
     mov     %rbx, %rdi
     call    car
-    cmp     $ENV_SYM, %rax
-    jne     .pb_check_define
-    call    print_env
-    jmp     .pb_loop
-.pb_check_define:
     cmp     $DEFINE_SYM, %rax
     jne     .pb_eval_plain
 
@@ -1315,6 +1265,5 @@ sym_ZEROP:      .asciz "ZEROP"
 sym_TIMES:      .asciz "TIMES"
 sym_DIFFERENCE: .asciz "DIFFERENCE"
 sym_PLUS:       .asciz "PLUS"
-sym_ENV:        .asciz "ENV"
 
     .section .note.GNU-stack,"",@progbits
