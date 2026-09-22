@@ -83,7 +83,7 @@ qemu_fail=0
 for fixture in "$CORPUS_DIR"/*.lisp; do
   base="${fixture%.lisp}"
   expected_file="${base}.expected"
-  actual="$(qemu-x86_64 -cpu Conroe "$REPO_ROOT/mccarthy-kernel" "$fixture" 2>&1)"
+  actual="$(cd "$REPO_ROOT" && qemu-x86_64 -cpu Conroe "$REPO_ROOT/mccarthy-kernel" "$fixture" 2>&1)"
   expected="$(cat "$expected_file")"
   if [[ "$actual" == "$expected" ]]; then
     qemu_pass=$((qemu_pass + 1))

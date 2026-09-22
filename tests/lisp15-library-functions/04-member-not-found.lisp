@@ -1,0 +1,1 @@
+(MEMBER (QUOTE Z) (QUOTE (A B C)))

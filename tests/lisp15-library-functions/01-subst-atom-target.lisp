@@ -1,0 +1,1 @@
+(SUBST (QUOTE X) (QUOTE A) (QUOTE (A B A C)))
