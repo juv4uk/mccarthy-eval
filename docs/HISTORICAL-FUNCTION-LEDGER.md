@@ -37,16 +37,12 @@
 | `assoc` | environment lookup used by `eval` | McCarthy 1960 evaluator formula | McCarthy-1960 core support function | source-confirmed by formula usage |
 | `pair` | parameter/value pairing used by LAMBDA | McCarthy 1960 evaluator formula | McCarthy-1960 core support function | source-confirmed by formula usage |
 | `append` | environment construction used by LAMBDA | McCarthy 1960 evaluator formula | McCarthy-1960 core support function | source-confirmed by formula usage |
-| `PLUS` | arithmetic | LISP I Programmer's Manual, 1 Mar 1960 | Historical facility | historical source confirmed |
-| `TIMES` | arithmetic | LISP I Programmer's Manual, 1 Mar 1960 | Historical facility | historical source confirmed |
-| `DIFFERENCE` | arithmetic subtraction | LISP 1.5 Programmer's Manual | Historical facility | source confirmed; exact edition/date to pin locally |
-| `ZEROP` | numeric predicate | LISP 1.5 Programmer's Manual | Historical facility | source confirmed; exact edition/date to pin locally |
+| `PLUS` | arithmetic | LISP I Programmer's Manual, 1 Mar 1960 | Historical facility | historical source confirmed; exact page to pin locally |
+| `TIMES` | arithmetic | LISP I Programmer's Manual, 1 Mar 1960 | Historical facility | historical source confirmed; exact page to pin locally |
+| `DIFFERENCE` | arithmetic subtraction | LISP 1.5 Programmer's Manual | Historical facility | source confirmed; exact edition/date/page to pin locally |
+| `ZEROP` | numeric predicate | LISP 1.5 Programmer's Manual | Historical facility | source confirmed; exact edition/date/page to pin locally |
 | `DEFINE` | function-definition pseudo-function | LISP I Programmer's Manual 1960; LISP 1.5 manual | Historical facility | historical name confirmed; current semantics require audit |
-| `ENV` | current environment introspection | no historical source identified yet | **not yet admissible as language** | must remove from semantic claim or find source |
-| REPL prompt | execution interface | historical LISP systems had interactive type-in facilities, but current exact behavior not yet pinned | runtime/tooling | audit separately |
-| `startup.lisp` autoload | modern startup convention | no specific historical source pinned | runtime/tooling | not a language semantic |
-| decimal reader/printer | concrete I/O implementation | historical LISP had numeric I/O, but exact current protocol is not yet pinned | runtime/tooling | audit separately |
-| fixnum tag | machine representation | reconstruction choice | machine/runtime support | not language semantics |
+| `ENV` | current environment introspection | no historical source identified | rejected language feature | removed from language surface in #21 |
 
 ## Important consequence
 
@@ -54,7 +50,7 @@
 
 Likewise `DEFINE` is historically documented, including in the 1960 LISP I Programmer's Manual; therefore the existence of a define facility is not itself a modern invention. The current project's particular `DEFINE` representation still needs comparison with the historical manual before claiming exact historical fidelity.
 
-By contrast, `ENV` currently has no historical provenance in the evidence collected here. It must not be counted as a reconstructed Lisp language function unless a historical source is added. It may remain only as explicitly non-semantic debugging/tooling, or be removed.
+By contrast, `ENV` has no historical provenance in the evidence collected here, so it is excluded from the reconstructed Lisp language surface. It may not be reintroduced as a semantic feature without new historical evidence.
 
 ## Source layers
 

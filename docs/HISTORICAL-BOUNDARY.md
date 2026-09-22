@@ -44,14 +44,9 @@
 
 Вони не є новими Lisp primitives.
 
-## 4. Features that currently need removal or provenance
+## 4. Features rejected from the reconstructed language surface
 
-`ENV` поки не має зафіксованого історичного джерела. Отже його не можна рахувати реконструйованою мовною функцією.
-
-До знаходження historical provenance:
-
-- або прибрати `ENV` із language surface;
-- або залишити лише як явно non-semantic debugging/tooling, не як historical Lisp feature.
+`ENV` не має зафіксованого історичного джерела. Тому його **видалено з language surface** у merged change #21. Воно не повинно повертатися як reconstructed Lisp feature без нового historical evidence.
 
 `startup.lisp` autoload і точна сучасна REPL convenience також не мають автоматично отримувати historical semantic status лише через те, що історичні LISP системи мали подібні операційні механізми.
 
