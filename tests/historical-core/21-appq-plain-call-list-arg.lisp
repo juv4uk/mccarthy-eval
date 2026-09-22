@@ -1,0 +1,5 @@
+((LABEL ECHO-LIST
+   (LAMBDA (X)
+     (COND ((ATOM X) X)
+           (T (CONS (ECHO-LIST (CAR X)) (ECHO-LIST (CDR X)))))))
+ (CONS (QUOTE A) (CONS (QUOTE B) NIL)))

@@ -1,0 +1,1 @@
+(ATOM (CONS (QUOTE A) (QUOTE B)))

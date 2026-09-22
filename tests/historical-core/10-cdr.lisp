@@ -1,0 +1,1 @@
+(CDR (CONS (QUOTE A) (QUOTE B)))

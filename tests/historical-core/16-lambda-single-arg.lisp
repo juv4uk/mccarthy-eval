@@ -1,0 +1,1 @@
+((LAMBDA (X) (CONS X X)) (QUOTE A))

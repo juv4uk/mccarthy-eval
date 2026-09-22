@@ -1,0 +1,1 @@
+(EQ (CONS (QUOTE A) (QUOTE B)) (CONS (QUOTE A) (QUOTE B)))
