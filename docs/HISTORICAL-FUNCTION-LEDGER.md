@@ -80,6 +80,22 @@ Before a language feature is added to the reconstructed evaluator:
 4. tests are labeled with provenance;
 5. unsupported modern behavior is not presented as historical reconstruction.
 
+## LISP 1.5 Appendix A "hardware" primitives (issue #7, Фаза 2, 2026-09-22)
+
+29 нових asm-примітивів (`NULL`/`EQUAL`/`LIST`/`AND`/`OR`/`NOT`/
+`RPLACA`/`RPLACD` плюс решта арифметики: `MINUS`/`ADD1`/`SUB1`/`MAX`/
+`MIN`/`RECIP`/`QUOTIENT`/`REMAINDER`/`DIVIDE`/`EXPT`/`LESSP`/
+`GREATERP`/`ONEP`/`MINUSP`/`NUMBERP`/`FIXP`/`FLOATP`/`LOGOR`/`LOGAND`/
+`LOGXOR`/`LEFTSHIFT`) реалізовано напряму з **LISP 1.5 Manual (1962),
+Appendix A, "as of August 1962"** -- офіційного повного каталогу, не
+реконструкції за здогадом. Повна таблиця з точними сторінками й
+adversarial-перевіркою: `tests/lisp15-library-primitives/PROVENANCE.md`
+(не дублюється тут, щоб не мати два джерела істини для одного набору
+цитат). Library-функції з Appendix A, що не потребують нових
+asm-примітивів (`subst`/`member`/`append`/`maplist`/`sassoc`/
+`sublis`/`pair`/`reverse`/`length`/`copy`) -- окрема, ще не виконана
+частина тієї ж Фази 2.
+
 ## English mirror
 
 Every language function or form included in the reconstruction must have historical provenance. The McCarthy 1960 evaluator is the core layer; later LISP I/LISP 1.5 facilities are historical layers with separate provenance. Runtime machinery may be modern, but it cannot invent language semantics.

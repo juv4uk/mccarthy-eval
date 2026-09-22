@@ -1,0 +1,1 @@
+(EQUAL (QUOTE A) (QUOTE B))

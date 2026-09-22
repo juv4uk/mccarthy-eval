@@ -366,6 +366,28 @@ eval[cons[f; appq[args]]; NIL]` — `appq` обгортає кожен уже о
 спершу знайдено й діагностовано через `gdb`; лише потім зареєстрований
 звʼязок з `appq` — не навпаки.
 
+### LISP 1.5 Appendix A "hardware" primitives (2026-09-22)
+
+Знайдено `Appendix A, "Functions and Constants in the LISP System...
+as of August 1962"` (LISP 1.5 Manual, ст.62-74) — офіційний повний
+каталог функцій від самих авторів, не переказ. Реалізовано 29 нових
+машинних примітивів, які реально використовують інструкції цього
+CPU (`idiv`/`imul`/`and`/`or`/`xor`/`shl`/`sar`/`cmov`): `NULL`,
+`EQUAL` (рекурсивна структурна рівність, на відміну від
+pointer-identity `EQ`), `LIST`, `AND`/`OR` (справжні short-circuit
+спецформи, а не `evlis`-based — значення `T`/`NIL`, не останнє
+обчислене, точно за текстом manual), `NOT`, `RPLACA`/`RPLACD`
+(перша деструктивна мутація в цьому kernel), і решта арифметики з
+таблиці Appendix A (`MINUS`/`ADD1`/`SUB1`/`MAX`/`MIN`/`RECIP`/
+`QUOTIENT`/`REMAINDER`/`DIVIDE`/`EXPT`/`LESSP`/`GREATERP`/`ONEP`/
+`MINUSP`/`NUMBERP`/`FIXP`/`FLOATP`/`LOGOR`/`LOGAND`/`LOGXOR`/
+`LEFTSHIFT`). Точні цитати сторінок, adversarial-перевірка
+(`EQUAL`, `AND`'s short-circuit) — `tests/lisp15-library-primitives/
+PROVENANCE.md`. Свідомо не реалізовано: pure Lisp library-функції
+(`SUBST`/`MEMBER`/`APPEND`/...) — не asm-примітиви, і IBM
+704/CTSS-специфічна інфраструктура (`LAP`/`GENSYM`/перфокартки) —
+не має сенсовного аналога на сучасному x86-64.
+
 ## Чому саме цей репозиторій, не `fpga-lisp`
 
 Власник прямо обрав «x86_64 цієї машини» замість «власної ISA

@@ -78,6 +78,7 @@ echo
 run_gate "historical-core (#9)" "tests/historical-core/run.sh"
 run_gate "isa-baseline (#7 physical-execution criterion, static + QEMU/Conroe)" "tests/isa-baseline/check-isa-baseline.sh"
 run_gate "historical-facility-extensions (#27)" "tests/historical-facility-extensions/run.sh"
+run_gate "lisp15-library-primitives (#7 Фаза 2, Appendix A hardware primitives)" "tests/lisp15-library-primitives/run.sh"
 
 # Round 2 -- prove determinism, not just single-run success
 echo "--- Determinism check: rebuild and rerun everything a second time ---"
@@ -92,6 +93,7 @@ else
 fi
 run_gate "historical-core (round 2, output-identity check)" "tests/historical-core/run.sh"
 run_gate "historical-facility-extensions (round 2, output-identity check)" "tests/historical-facility-extensions/run.sh"
+run_gate "lisp15-library-primitives (round 2, output-identity check)" "tests/lisp15-library-primitives/run.sh"
 echo
 
 echo "--- Known regression witnesses covered by this closeout ---"
