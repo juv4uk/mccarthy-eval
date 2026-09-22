@@ -5,5 +5,7 @@
 # Спробуй: ./build-kernel.sh listutils.lisp
 set -euo pipefail
 cd "$(dirname "$0")"
-gcc -no-pie -O0 -o mccarthy-kernel mccarthy-kernel.s
+# -s (strip symbols при лінкуванні) -- детермінований білд, див.
+# коментар у build.sh / issue #28 / tests/closeout/.
+gcc -no-pie -O0 -s -o mccarthy-kernel mccarthy-kernel.s
 ./mccarthy-kernel "${1:-demo.lisp}"

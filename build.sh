@@ -4,5 +4,9 @@
 # x86_64 Intel Core i5-6400): "(A . B)" потім "(A . A)".
 set -euo pipefail
 cd "$(dirname "$0")"
-gcc -no-pie -O0 -o mccarthy-eval mccarthy-eval.s
+# -s (strip symbols при лінкуванні): без цього кожен білд вбудовує
+# випадкове ім'я gcc-івського тимчасового .o-файлу в strtab бінарника
+# -- реальна нетермінованість, знайдена й задокументована в issue #28
+# (tests/closeout/); байти самого коду не змінюються.
+gcc -no-pie -O0 -s -o mccarthy-eval mccarthy-eval.s
 ./mccarthy-eval
