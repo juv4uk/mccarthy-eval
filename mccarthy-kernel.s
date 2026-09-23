@@ -86,6 +86,9 @@ filebuf:                    /* loaded contents of the argv[1] .lisp file */
 linebuf:                    /* one line of REPL input at a time */
     .skip 4096
 
+sidbuf:                     /* exact 8-bit SID presentation + NUL */
+    .skip 9
+
 argc_saved:
     .skip 8
 
@@ -3259,17 +3262,22 @@ print_sid:
     push    %r12
     call    getsid
     mov     %rax, %r12
-    mov     $7, %r11
+    lea     sidbuf(%rip), %rsi
+    mov     $7, %rcx
 .print_sid_loop:
     mov     %r12, %rax
-    mov     %r11, %rcx
     shr     %cl, %rax
     and     $1, %eax
     add     $'0', %eax
-    mov     %eax, %edi
-    call    putchar
-    dec     %r11
+    movb    %al, (%rsi)
+    inc     %rsi
+    dec     %rcx
     jns     .print_sid_loop
+    movb    $0, (%rsi)
+    lea     fmt_str(%rip), %rdi
+    lea     sidbuf(%rip), %rsi
+    xor     %eax, %eax
+    call    printf
     pop     %r12
     ret
 
