@@ -86,6 +86,9 @@ filebuf:                    /* loaded contents of the argv[1] .lisp file */
 linebuf:                    /* one line of REPL input at a time */
     .skip 4096
 
+sidbuf:                     /* exact 8-bit SID presentation + NUL */
+    .skip 9
+
 argc_saved:
     .skip 8
 
@@ -95,13 +98,15 @@ global_env:
     .text
     .globl main
 
-/* Tag scheme, extended for numbers (2026-08-28, next step):
+/* Tagged runtime word:
  *   bits[1:0] == 00  -> cons pointer (16-byte aligned heap address)
- *   bits[1:0] == 01  -> symbol   (payload = value >> 2)
- *   bits[1:0] == 11  -> fixnum   (payload = value >> 2, arithmetic shift)
- * atomp (bit0 test) still correctly means "not a cons pointer" for
- * BOTH symbols and fixnums, unchanged everywhere it's already used.
- * Symbol tags are now id*4|1 (was id*2|1) so bit1 stays 0 for them. */
+ *   bits[1:0] == 01  -> source/data symbol (payload = symtab index)
+ *   bits[1:0] == 10  -> exact SID8 function identity (payload = 8 bits)
+ *   bits[1:0] == 11  -> fixnum (payload = signed value)
+ *
+ * SID8 is a transport/dispatch carrier, not a second historical name.
+ * Historical source spellings remain ordinary symbols until the evaluator's
+ * explicit function-resolution boundary. */
 .equ NIL_SYM, 1              /* guaranteed by interning "NIL" first, at startup */
 .equ T_SYM,   5               /* guaranteed by interning "T" second */
 
@@ -128,7 +133,7 @@ cons:
  * концепція. */
 car:
     mov     %rdi, %rax
-    and     $1, %rax
+    and     $3, %rax
     jnz     .car_not_pointer
     mov     (%rdi), %rax
     ret
@@ -139,7 +144,7 @@ car:
 /* cdr(rdi=val) -> rax. Та сама перевірка типу, що й у car вище. */
 cdr:
     mov     %rdi, %rax
-    and     $1, %rax
+    and     $3, %rax
     jnz     .cdr_not_pointer
     mov     8(%rdi), %rax
     ret
@@ -149,7 +154,30 @@ cdr:
 
 atomp:
     mov     %rdi, %rax
-    and     $1, %rax
+    and     $3, %rax
+    setne   %al
+    movzx   %al, %eax
+    ret
+
+sidp:
+    mov     %rdi, %rax
+    and     $3, %rax
+    cmp     $2, %rax
+    sete    %al
+    movzx   %al, %eax
+    ret
+
+mksid:
+    mov     %rdi, %rax
+    and     $255, %rax
+    shl     $2, %rax
+    or      $2, %rax
+    ret
+
+getsid:
+    mov     %rdi, %rax
+    shr     $2, %rax
+    and     $255, %rax
     ret
 
 eq_prim:
@@ -1314,6 +1342,100 @@ appq:
     pop     %r12
     ret
 
+/* source_symbol_exact_sid(rdi=source symbol) -> tagged SID8 or 0.
+ * Exact eight-character 0/1 spelling only. */
+source_symbol_exact_sid:
+    push    %r12
+    mov     %rdi, %rax
+    and     $3, %rax
+    cmp     $1, %rax
+    jne     .sses_no
+    mov     %rdi, %r12
+    shr     $2, %r12
+    mov     symtab(,%r12,8), %r12
+    xor     %r8, %r8
+    xor     %rcx, %rcx
+.sses_loop:
+    cmp     $8, %rcx
+    je      .sses_end
+    movzx   (%r12,%rcx,1), %eax
+    shl     $1, %r8
+    cmp     $'0', %al
+    je      .sses_next
+    cmp     $'1', %al
+    jne     .sses_no
+    or      $1, %r8
+.sses_next:
+    inc     %rcx
+    jmp     .sses_loop
+.sses_end:
+    cmpb    $0, 8(%r12)
+    jne     .sses_no
+    mov     %r8, %rdi
+    call    mksid
+    pop     %r12
+    ret
+.sses_no:
+    xor     %eax, %eax
+    pop     %r12
+    ret
+
+/* Historical source names are accepted only before this boundary.
+ * After it, Core1 dispatch uses the exact SID8 carrier. */
+resolve_core1_callable_sid:
+    push    %r12
+    mov     %rdi, %r12
+    mov     %r12, %rdi
+    call    sidp
+    test    %rax, %rax
+    jz      .rcs_not_sid
+    mov     %r12, %rax
+    jmp     .rcs_done
+.rcs_not_sid:
+    mov     %r12, %rdi
+    call    source_symbol_exact_sid
+    test    %rax, %rax
+    jnz     .rcs_done
+    cmp     $QUOTE_SYM, %r12
+    je      .rcs_quote
+    cmp     $ATOM_SYM, %r12
+    je      .rcs_atom
+    cmp     $EQ_SYM, %r12
+    je      .rcs_eq
+    cmp     $COND_SYM, %r12
+    je      .rcs_cond
+    cmp     $CAR_SYM, %r12
+    je      .rcs_car
+    cmp     $CDR_SYM, %r12
+    je      .rcs_cdr
+    cmp     $CONS_SYM, %r12
+    je      .rcs_cons
+    xor     %eax, %eax
+    jmp     .rcs_done
+.rcs_quote:
+    mov     $SID_QUOTE, %rax
+    jmp     .rcs_done
+.rcs_atom:
+    mov     $SID_ATOM, %rax
+    jmp     .rcs_done
+.rcs_eq:
+    mov     $SID_EQ, %rax
+    jmp     .rcs_done
+.rcs_cond:
+    mov     $SID_COND, %rax
+    jmp     .rcs_done
+.rcs_car:
+    mov     $SID_CAR, %rax
+    jmp     .rcs_done
+.rcs_cdr:
+    mov     $SID_CDR, %rax
+    jmp     .rcs_done
+.rcs_cons:
+    mov     $SID_CONS, %rax
+.rcs_done:
+    pop     %r12
+    ret
+
 /* =================================================================
  * eval(rdi=e, rsi=a) -> rax -- now complete: QUOTE/ATOM/EQ/COND/CAR/
  * CDR/CONS/LABEL/LAMBDA/plain-call, matching the 1960 paper in full.
@@ -1329,6 +1451,19 @@ eval:
     call    atomp
     test    %rax, %rax
     jz      .not_atom
+    mov     %r12, %rdi
+    call    sidp
+    test    %rax, %rax
+    jz      .atom_not_runtime_sid
+    mov     %r12, %rax
+    jmp     .eval_done
+.atom_not_runtime_sid:
+    mov     %r12, %rdi
+    call    source_symbol_exact_sid
+    test    %rax, %rax
+    jz      .atom_not_sid_spelling
+    jmp     .eval_done
+.atom_not_sid_spelling:
     /* T self-evaluates, matching how NIL already, implicitly,
      * self-evaluates via assoc's not-found fallback. Without this,
      * T never appears as a value -- every COND T-clause silently
@@ -1362,7 +1497,14 @@ eval:
     test    %rax, %rax
     jz      .head_not_atom
 
-    cmp     $QUOTE_SYM, %r14
+    mov     %r14, %rdi
+    call    resolve_core1_callable_sid
+    test    %rax, %rax
+    jz      .core1_head_unresolved
+    mov     %rax, %r14
+.core1_head_unresolved:
+
+    cmp     $SID_QUOTE, %r14
     jne     .try_function
     mov     %r12, %rdi
     call    cadr
@@ -1412,7 +1554,7 @@ eval:
     jmp     .eval_done
 
 .try_atom:
-    cmp     $ATOM_SYM, %r14
+    cmp     $SID_ATOM, %r14
     jne     .try_eq
     mov     %r12, %rdi
     call    cadr
@@ -1430,7 +1572,7 @@ eval:
     jmp     .eval_done
 
 .try_eq:
-    cmp     $EQ_SYM, %r14
+    cmp     $SID_EQ, %r14
     jne     .try_cond
     mov     %r12, %rdi
     call    cadr
@@ -1455,7 +1597,7 @@ eval:
     jmp     .eval_done
 
 .try_cond:
-    cmp     $COND_SYM, %r14
+    cmp     $SID_COND, %r14
     jne     .try_car
     mov     %r12, %rdi
     call    cdr
@@ -1465,7 +1607,7 @@ eval:
     jmp     .eval_done
 
 .try_car:
-    cmp     $CAR_SYM, %r14
+    cmp     $SID_CAR, %r14
     jne     .try_cdr
     mov     %r12, %rdi
     call    cadr
@@ -1477,7 +1619,7 @@ eval:
     jmp     .eval_done
 
 .try_cdr:
-    cmp     $CDR_SYM, %r14
+    cmp     $SID_CDR, %r14
     jne     .try_cons
     mov     %r12, %rdi
     call    cadr
@@ -1489,8 +1631,8 @@ eval:
     jmp     .eval_done
 
 .try_cons:
-    cmp     $CONS_SYM, %r14
-    jne     .try_zerop
+    cmp     $SID_CONS, %r14
+    jne     .try_core1_sid_unimplemented
     mov     %r12, %rdi
     call    cadr
     mov     %rax, %rdi
@@ -1505,6 +1647,14 @@ eval:
     mov     %rax, %rsi
     pop     %rdi
     call    cons
+    jmp     .eval_done
+
+.try_core1_sid_unimplemented:
+    mov     %r14, %rdi
+    call    sidp
+    test    %rax, %rax
+    jz      .try_zerop
+    mov     $NIL_SYM, %rax
     jmp     .eval_done
 
 /* Arithmetic, added 2026-08-28 -- not in McCarthy 1960's own seven,
@@ -2882,6 +3032,14 @@ read_atom:
     movb    $0, (%rdi)
     mov     %rsi, input_ptr(%rip)
     lea     tokbuf(%rip), %rdi
+    call    looks_sid8_spelling
+    test    %rax, %rax
+    jz      .read_atom_not_sid8
+    lea     tokbuf(%rip), %rdi
+    call    intern
+    ret
+.read_atom_not_sid8:
+    lea     tokbuf(%rip), %rdi
     call    looks_numeric
     test    %rax, %rax
     jz      .read_atom_symbol
@@ -2891,6 +3049,31 @@ read_atom:
 .read_atom_symbol:
     lea     tokbuf(%rip), %rdi
     call    intern
+    ret
+
+/* looks_sid8_spelling(rdi=text) -> rax=1 only for exact bare [01]{8}.
+ * The reader keeps this as a source symbol so QUOTE remains a data barrier;
+ * eval resolves the unquoted token into the dedicated SID8 runtime carrier. */
+looks_sid8_spelling:
+    xor     %rcx, %rcx
+.ls8_loop:
+    cmp     $8, %rcx
+    je      .ls8_end
+    movzx   (%rdi,%rcx,1), %eax
+    cmp     $'0', %al
+    je      .ls8_next
+    cmp     $'1', %al
+    jne     .ls8_no
+.ls8_next:
+    inc     %rcx
+    jmp     .ls8_loop
+.ls8_end:
+    cmpb    $0, 8(%rdi)
+    jne     .ls8_no
+    mov     $1, %eax
+    ret
+.ls8_no:
+    xor     %eax, %eax
     ret
 
 /* looks_numeric(rdi=tokbuf, null-terminated) -> rax (1/0):
@@ -3075,6 +3258,29 @@ print_fixnum:                   /* rdi = tagged fixnum -> prints its decimal val
     call    printf
     ret
 
+print_sid:
+    push    %r12
+    call    getsid
+    mov     %rax, %r12
+    lea     sidbuf(%rip), %rsi
+    mov     $7, %rcx
+.print_sid_loop:
+    mov     %r12, %rax
+    shr     %cl, %rax
+    and     $1, %eax
+    add     $'0', %eax
+    movb    %al, (%rsi)
+    inc     %rsi
+    dec     %rcx
+    jns     .print_sid_loop
+    movb    $0, (%rsi)
+    lea     fmt_str(%rip), %rdi
+    lea     sidbuf(%rip), %rsi
+    xor     %eax, %eax
+    call    printf
+    pop     %r12
+    ret
+
 print_sexpr:
     push    %rbx
     mov     %rdi, %rbx
@@ -3082,6 +3288,14 @@ print_sexpr:
     call    atomp
     test    %rax, %rax
     jz      .print_cons
+    mov     %rbx, %rdi
+    call    sidp
+    test    %rax, %rax
+    jz      .print_not_sid
+    mov     %rbx, %rdi
+    call    print_sid
+    jmp     .print_done
+.print_not_sid:
     mov     %rbx, %rdi
     call    fixnump
     test    %rax, %rax
@@ -3135,6 +3349,16 @@ print_sexpr:
  * cons+pair mechanism LAMBDA application already uses internally,
  * exposed as an explicit top-level operation, not new magic.
  * ================================================================= */
+.equ SID_QUOTE,  6             /* 00000001 payload, tag 10 */
+.equ SID_ATOM,   10             /* 00000010 */
+.equ SID_EQ,     14             /* 00000011 */
+.equ SID_CONS,   18             /* 00000100 */
+.equ SID_CAR,    22             /* 00000101 */
+.equ SID_CDR,    26             /* 00000110 */
+.equ SID_COND,   30             /* 00000111 */
+.equ SID_LAMBDA, 34             /* 00001000 */
+.equ SID_DEFINE, 38             /* 00001001 */
+
 .equ QUOTE_SYM,  9
 .equ ATOM_SYM,   13
 .equ EQ_SYM,     17

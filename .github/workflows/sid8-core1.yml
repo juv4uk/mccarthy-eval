@@ -1,0 +1,23 @@
+name: SID8 Core1 bootstrap boundary
+
+on:
+  push:
+    branches:
+      - agent/54-core1-sid8-dispatch
+  pull_request:
+    paths:
+      - "mccarthy-kernel.s"
+      - "tests/sid8-only/**"
+      - ".github/workflows/sid8-core1.yml"
+
+jobs:
+  sid8-core1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build kernel
+        run: gcc -no-pie -O0 -s -o mccarthy-kernel mccarthy-kernel.s
+      - name: SID8 focused fixtures
+        run: bash tests/sid8-only/run.sh
+      - name: Historical Core1 regression
+        run: bash tests/historical-core/run.sh
