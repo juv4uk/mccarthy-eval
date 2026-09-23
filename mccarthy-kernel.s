@@ -1342,44 +1342,6 @@ appq:
     pop     %r12
     ret
 
-/* source_symbol_exact_sid(rdi=source symbol) -> tagged SID8 or 0.
- * Exact eight-character 0/1 spelling only. */
-source_symbol_exact_sid:
-    push    %r12
-    mov     %rdi, %rax
-    and     $3, %rax
-    cmp     $1, %rax
-    jne     .sses_no
-    mov     %rdi, %r12
-    shr     $2, %r12
-    mov     symtab(,%r12,8), %r12
-    xor     %r8, %r8
-    xor     %rcx, %rcx
-.sses_loop:
-    cmp     $8, %rcx
-    je      .sses_end
-    movzx   (%r12,%rcx,1), %eax
-    shl     $1, %r8
-    cmp     $'0', %al
-    je      .sses_next
-    cmp     $'1', %al
-    jne     .sses_no
-    or      $1, %r8
-.sses_next:
-    inc     %rcx
-    jmp     .sses_loop
-.sses_end:
-    cmpb    $0, 8(%r12)
-    jne     .sses_no
-    mov     %r8, %rdi
-    call    mksid
-    pop     %r12
-    ret
-.sses_no:
-    xor     %eax, %eax
-    pop     %r12
-    ret
-
 /* Historical source names are accepted only before this boundary.
  * After it, Core1 dispatch uses the exact SID8 carrier. */
 resolve_core1_callable_sid:
@@ -1392,10 +1354,6 @@ resolve_core1_callable_sid:
     mov     %r12, %rax
     jmp     .rcs_done
 .rcs_not_sid:
-    mov     %r12, %rdi
-    call    source_symbol_exact_sid
-    test    %rax, %rax
-    jnz     .rcs_done
     cmp     $QUOTE_SYM, %r12
     je      .rcs_quote
     cmp     $ATOM_SYM, %r12
@@ -1454,16 +1412,10 @@ eval:
     mov     %r12, %rdi
     call    sidp
     test    %rax, %rax
-    jz      .atom_not_runtime_sid
+    jz      .atom_not_sid
     mov     %r12, %rax
     jmp     .eval_done
-.atom_not_runtime_sid:
-    mov     %r12, %rdi
-    call    source_symbol_exact_sid
-    test    %rax, %rax
-    jz      .atom_not_sid_spelling
-    jmp     .eval_done
-.atom_not_sid_spelling:
+.atom_not_sid:
     /* T self-evaluates, matching how NIL already, implicitly,
      * self-evaluates via assoc's not-found fallback. Without this,
      * T never appears as a value -- every COND T-clause silently
@@ -3036,7 +2988,7 @@ read_atom:
     test    %rax, %rax
     jz      .read_atom_not_sid8
     lea     tokbuf(%rip), %rdi
-    call    intern
+    call    parse_sid8
     ret
 .read_atom_not_sid8:
     lea     tokbuf(%rip), %rdi
@@ -3052,8 +3004,8 @@ read_atom:
     ret
 
 /* looks_sid8_spelling(rdi=text) -> rax=1 only for exact bare [01]{8}.
- * The reader keeps this as a source symbol so QUOTE remains a data barrier;
- * eval resolves the unquoted token into the dedicated SID8 runtime carrier. */
+ * The complete 8-bit binary token space is reserved for function identity.
+ * Exact tokens therefore enter the runtime as SID8 directly, never Symbol. */
 looks_sid8_spelling:
     xor     %rcx, %rcx
 .ls8_loop:
@@ -3074,6 +3026,27 @@ looks_sid8_spelling:
     ret
 .ls8_no:
     xor     %eax, %eax
+    ret
+
+/* parse_sid8(rdi=text) -> exact tagged SID8.
+ * Caller has already validated exact [01]{8}; no alternate spelling exists. */
+parse_sid8:
+    xor     %r8, %r8
+    xor     %rcx, %rcx
+.ps8_loop:
+    cmp     $8, %rcx
+    je      .ps8_done
+    shl     $1, %r8
+    movzx   (%rdi,%rcx,1), %eax
+    cmp     $'1', %al
+    jne     .ps8_next
+    or      $1, %r8
+.ps8_next:
+    inc     %rcx
+    jmp     .ps8_loop
+.ps8_done:
+    mov     %r8, %rdi
+    call    mksid
     ret
 
 /* looks_numeric(rdi=tokbuf, null-terminated) -> rax (1/0):
