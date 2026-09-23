@@ -1342,44 +1342,6 @@ appq:
     pop     %r12
     ret
 
-/* source_symbol_exact_sid(rdi=source symbol) -> tagged SID8 or 0.
- * Exact eight-character 0/1 spelling only. */
-source_symbol_exact_sid:
-    push    %r12
-    mov     %rdi, %rax
-    and     $3, %rax
-    cmp     $1, %rax
-    jne     .sses_no
-    mov     %rdi, %r12
-    shr     $2, %r12
-    mov     symtab(,%r12,8), %r12
-    xor     %r8, %r8
-    xor     %rcx, %rcx
-.sses_loop:
-    cmp     $8, %rcx
-    je      .sses_end
-    movzx   (%r12,%rcx,1), %eax
-    shl     $1, %r8
-    cmp     $'0', %al
-    je      .sses_next
-    cmp     $'1', %al
-    jne     .sses_no
-    or      $1, %r8
-.sses_next:
-    inc     %rcx
-    jmp     .sses_loop
-.sses_end:
-    cmpb    $0, 8(%r12)
-    jne     .sses_no
-    mov     %r8, %rdi
-    call    mksid
-    pop     %r12
-    ret
-.sses_no:
-    xor     %eax, %eax
-    pop     %r12
-    ret
-
 /* Historical source names are accepted only before this boundary.
  * After it, Core1 dispatch uses the exact SID8 carrier. */
 resolve_core1_callable_sid:
@@ -1392,10 +1354,6 @@ resolve_core1_callable_sid:
     mov     %r12, %rax
     jmp     .rcs_done
 .rcs_not_sid:
-    mov     %r12, %rdi
-    call    source_symbol_exact_sid
-    test    %rax, %rax
-    jnz     .rcs_done
     cmp     $QUOTE_SYM, %r12
     je      .rcs_quote
     cmp     $ATOM_SYM, %r12
@@ -1454,16 +1412,10 @@ eval:
     mov     %r12, %rdi
     call    sidp
     test    %rax, %rax
-    jz      .atom_not_runtime_sid
+    jz      .atom_not_sid
     mov     %r12, %rax
     jmp     .eval_done
-.atom_not_runtime_sid:
-    mov     %r12, %rdi
-    call    source_symbol_exact_sid
-    test    %rax, %rax
-    jz      .atom_not_sid_spelling
-    jmp     .eval_done
-.atom_not_sid_spelling:
+.atom_not_sid:
     /* T self-evaluates, matching how NIL already, implicitly,
      * self-evaluates via assoc's not-found fallback. Without this,
      * T never appears as a value -- every COND T-clause silently
@@ -3036,7 +2988,7 @@ read_atom:
     test    %rax, %rax
     jz      .read_atom_not_sid8
     lea     tokbuf(%rip), %rdi
-    call    intern
+    call    parse_sid8
     ret
 .read_atom_not_sid8:
     lea     tokbuf(%rip), %rdi
@@ -3052,8 +3004,8 @@ read_atom:
     ret
 
 /* looks_sid8_spelling(rdi=text) -> rax=1 only for exact bare [01]{8}.
- * The reader keeps this as a source symbol so QUOTE remains a data barrier;
- * eval resolves the unquoted token into the dedicated SID8 runtime carrier. */
+ * The full 8-bit binary token space is reserved for function identity, so
+ * an exact token is never interned as a source/data symbol. */
 looks_sid8_spelling:
     xor     %rcx, %rcx
 .ls8_loop:
@@ -3074,6 +3026,730 @@ looks_sid8_spelling:
     ret
 .ls8_no:
     xor     %eax, %eax
+    ret
+
+/* parse_sid8(rdi=text) -> exact tagged SID8.
+ * Caller has already validated exact [01]{8}; no alternate spelling exists. */
+parse_sid8:
+    xor     %r8, %r8
+    xor     %rcx, %rcx
+.ps8_loop:
+    cmp     $8, %rcx
+    je      .ps8_done
+    shl     $1, %r8
+    movzx   (%rdi,%rcx,1), %eax
+    cmp     (rdi=tokbuf, null-terminated) -> rax (1/0):
+ * a digit, or '-' followed immediately by a digit. */
+/* looks_numeric(rdi=tokbuf, null-terminated) -> rax (1/0). Scans the
+ * WHOLE token, not just the first character -- a token like "5.124"
+ * starts with a digit but is not a valid integer, and this kernel has
+ * no floating-point type at all. Getting this wrong doesn't error;
+ * it silently mis-parses the '.' as a "digit" via unsigned wraparound
+ * in parse_int, producing garbage (empirically found: "5.124" and
+ * "1266.156" summed to 13218280, not a decimal-point error message).
+ * A token only counts as numeric if, after an optional leading '-',
+ * every remaining character is '0'-'9' and there's at least one. */
+looks_numeric:
+    movzx   (%rdi), %eax
+    cmp     $'-', %al
+    jne     .ln_scan
+    inc     %rdi
+.ln_scan:
+    xor     %r8, %r8             /* saw at least one digit? */
+.ln_loop:
+    movzx   (%rdi), %eax
+    test    %al, %al
+    jz      .ln_check_end
+    cmp     $'0', %al
+    jb      .ln_no
+    cmp     $'9', %al
+    ja      .ln_no
+    mov     $1, %r8
+    inc     %rdi
+    jmp     .ln_loop
+.ln_check_end:
+    test    %r8, %r8
+    jz      .ln_no
+    mov     $1, %eax
+    ret
+.ln_no:
+    xor     %eax, %eax
+    ret
+
+/* parse_int(rdi=tokbuf) -> rax = tagged fixnum */
+parse_int:
+    xor     %r8, %r8             /* negative flag */
+    movzx   (%rdi), %eax
+    cmp     $'-', %al
+    jne     .pi_loop
+    mov     $1, %r8
+    inc     %rdi
+.pi_loop:
+    xor     %rsi, %rsi           /* accumulator */
+.pi_digits:
+    movzx   (%rdi), %eax
+    test    %al, %al
+    jz      .pi_done
+    sub     $'0', %al
+    movzx   %al, %rax
+    imul    $10, %rsi, %rsi
+    add     %rax, %rsi
+    inc     %rdi
+    jmp     .pi_digits
+.pi_done:
+    test    %r8, %r8
+    jz      .pi_positive
+    neg     %rsi
+.pi_positive:
+    mov     %rsi, %rdi
+    call    mkfix
+    ret
+
+read_sexpr:
+    call    skip_ws
+    mov     input_ptr(%rip), %rdi
+    movzx   (%rdi), %eax
+    cmp     $'(', %al
+    jne     .read_sexpr_atom
+    inc     %rdi
+    mov     %rdi, input_ptr(%rip)
+    call    read_list
+    ret
+.read_sexpr_atom:
+    call    read_atom
+    ret
+
+/* peek_dot() -> rax=1 if a standalone "." token is next (surrounded
+ * by whitespace/parens/EOF on both sides, matching the printer's own
+ * dotted-pair output convention "(A . B)") -- and CONSUMES just the
+ * "." character itself, leaving the rest of input untouched. rax=0
+ * and input_ptr left alone otherwise. A "." embedded in a longer
+ * token (there are none in this kernel -- no floats, per
+ * looks_numeric's own comment above) would never reach here anyway,
+ * since read_atom's tokenizer only stops at whitespace/parens/EOF. */
+peek_dot:
+    call    skip_ws
+    mov     input_ptr(%rip), %rdi
+    movzx   (%rdi), %eax
+    cmp     $'.', %al
+    jne     .peek_dot_no
+    movzx   1(%rdi), %ecx
+    test    %cl, %cl
+    jz      .peek_dot_yes
+    cmp     $' ', %cl
+    je      .peek_dot_yes
+    cmp     $'\t', %cl
+    je      .peek_dot_yes
+    cmp     $'\n', %cl
+    je      .peek_dot_yes
+    cmp     $'(', %cl
+    je      .peek_dot_yes
+    cmp     $')', %cl
+    je      .peek_dot_yes
+    jmp     .peek_dot_no
+.peek_dot_yes:
+    inc     %rdi
+    mov     %rdi, input_ptr(%rip)
+    mov     $1, %eax
+    ret
+.peek_dot_no:
+    xor     %eax, %eax
+    ret
+
+read_list:
+    call    skip_ws
+    mov     input_ptr(%rip), %rdi
+    movzx   (%rdi), %eax
+    cmp     $')', %al
+    jne     .read_list_elem
+    inc     %rdi
+    mov     %rdi, input_ptr(%rip)
+    mov     $NIL_SYM, %rax
+    ret
+.read_list_elem:
+    call    read_sexpr
+    push    %rax                   /* car */
+    call    peek_dot
+    test    %rax, %rax
+    jz      .read_list_proper
+    /* dotted-pair tail: "(A . B)" -- read exactly one more sexpr as
+     * the cdr, matching the printer's own dotted-pair notation
+     * (previously only the printer could produce this syntax; the
+     * reader could not parse it back -- tests/lisp15-library-
+     * functions/PROVENANCE.md documented this asymmetry). */
+    call    read_sexpr             /* cdr */
+    push    %rax
+    call    skip_ws
+    mov     input_ptr(%rip), %rdi
+    movzx   (%rdi), %eax
+    cmp     $')', %al
+    jne     .read_list_dot_close   /* malformed: no closing paren --
+                                     * graceful, don't consume, don't
+                                     * crash */
+    inc     %rdi
+    mov     %rdi, input_ptr(%rip)
+.read_list_dot_close:
+    pop     %rsi                   /* cdr */
+    pop     %rdi                   /* car */
+    call    cons
+    ret
+.read_list_proper:
+    call    read_list
+    mov     %rax, %rsi
+    pop     %rdi
+    call    cons
+    ret
+
+/* =================================================================
+ * Printer
+ * ================================================================= */
+print_sym_name:                 /* rdi = tagged symbol -> prints its name */
+    mov     %rdi, %rax
+    shr     $2, %rax
+    mov     symtab(,%rax,8), %rsi
+    lea     fmt_str(%rip), %rdi
+    xor     %eax, %eax
+    call    printf
+    ret
+
+print_fixnum:                   /* rdi = tagged fixnum -> prints its decimal value */
+    call    getfix
+    mov     %rax, %rsi
+    lea     fmt_int(%rip), %rdi
+    xor     %eax, %eax
+    call    printf
+    ret
+
+print_sid:
+    push    %r12
+    call    getsid
+    mov     %rax, %r12
+    lea     sidbuf(%rip), %rsi
+    mov     $7, %rcx
+.print_sid_loop:
+    mov     %r12, %rax
+    shr     %cl, %rax
+    and     $1, %eax
+    add     $'0', %eax
+    movb    %al, (%rsi)
+    inc     %rsi
+    dec     %rcx
+    jns     .print_sid_loop
+    movb    $0, (%rsi)
+    lea     fmt_str(%rip), %rdi
+    lea     sidbuf(%rip), %rsi
+    xor     %eax, %eax
+    call    printf
+    pop     %r12
+    ret
+
+print_sexpr:
+    push    %rbx
+    mov     %rdi, %rbx
+    mov     %rbx, %rdi
+    call    atomp
+    test    %rax, %rax
+    jz      .print_cons
+    mov     %rbx, %rdi
+    call    sidp
+    test    %rax, %rax
+    jz      .print_not_sid
+    mov     %rbx, %rdi
+    call    print_sid
+    jmp     .print_done
+.print_not_sid:
+    mov     %rbx, %rdi
+    call    fixnump
+    test    %rax, %rax
+    jz      .print_symbol
+    mov     %rbx, %rdi
+    call    print_fixnum
+    jmp     .print_done
+.print_symbol:
+    mov     %rbx, %rdi
+    call    print_sym_name
+    jmp     .print_done
+.print_cons:
+    lea     fmt_open(%rip), %rdi
+    xor     %eax, %eax
+    call    printf
+    mov     (%rbx), %rdi
+    call    print_sexpr
+    mov     8(%rbx), %rbx
+.print_tail_loop:
+    mov     %rbx, %rdi
+    call    atomp
+    test    %rax, %rax
+    jnz     .print_tail_end
+    lea     fmt_space(%rip), %rdi
+    xor     %eax, %eax
+    call    printf
+    mov     (%rbx), %rdi
+    call    print_sexpr
+    mov     8(%rbx), %rbx
+    jmp     .print_tail_loop
+.print_tail_end:
+    cmp     $NIL_SYM, %rbx
+    je      .print_close
+    lea     fmt_dot(%rip), %rdi
+    xor     %eax, %eax
+    call    printf
+    mov     %rbx, %rdi
+    call    print_sexpr
+.print_close:
+    lea     fmt_close(%rip), %rdi
+    xor     %eax, %eax
+    call    printf
+.print_done:
+    pop     %rbx
+    ret
+
+/* =================================================================
+ * Top-level driver: read forms from `program`, evaluate each with
+ * an accumulating global_env, print results. (DEFINE name expr)
+ * is handled here, not inside eval -- it is nothing but the same
+ * cons+pair mechanism LAMBDA application already uses internally,
+ * exposed as an explicit top-level operation, not new magic.
+ * ================================================================= */
+.equ SID_QUOTE,  6             /* 00000001 payload, tag 10 */
+.equ SID_ATOM,   10             /* 00000010 */
+.equ SID_EQ,     14             /* 00000011 */
+.equ SID_CONS,   18             /* 00000100 */
+.equ SID_CAR,    22             /* 00000101 */
+.equ SID_CDR,    26             /* 00000110 */
+.equ SID_COND,   30             /* 00000111 */
+.equ SID_LAMBDA, 34             /* 00001000 */
+.equ SID_DEFINE, 38             /* 00001001 */
+
+.equ QUOTE_SYM,  9
+.equ ATOM_SYM,   13
+.equ EQ_SYM,     17
+.equ COND_SYM,   21
+.equ CAR_SYM,    25
+.equ CDR_SYM,    29
+.equ CONS_SYM,   33
+.equ LABEL_SYM,  37
+.equ LAMBDA_SYM, 41
+.equ DEFINE_SYM, 45
+.equ ZEROP_SYM,      49
+.equ TIMES_SYM,      53
+.equ DIFFERENCE_SYM, 57
+.equ PLUS_SYM,       61
+/* LISP 1.5 Programmer's Manual (1962), Appendix A, "Functions and
+ * Constants in the LISP System... as of August 1962" -- real,
+ * physical x86-64 primitives (not LABEL/LAMBDA library functions;
+ * those belong in a .lisp library file, not here). Exact page
+ * citations in tests/historical-facility-extensions/PROVENANCE.md. */
+.equ NULL_SYM,      65
+.equ EQUAL_SYM,      69
+.equ LIST_SYM,       73
+.equ AND_SYM,        77
+.equ OR_SYM,         81
+.equ NOT_SYM,        85
+.equ RPLACA_SYM,     89
+.equ RPLACD_SYM,     93
+.equ MINUS_SYM,      97
+.equ ADD1_SYM,       101
+.equ SUB1_SYM,       105
+.equ MAX_SYM,        109
+.equ MIN_SYM,        113
+.equ RECIP_SYM,      117
+.equ QUOTIENT_SYM,   121
+.equ REMAINDER_SYM,  125
+.equ DIVIDE_SYM,     129
+.equ EXPT_SYM,       133
+.equ LESSP_SYM,      137
+.equ GREATERP_SYM,   141
+.equ ONEP_SYM,       145
+.equ MINUSP_SYM,     149
+.equ NUMBERP_SYM,    153
+.equ FIXP_SYM,       157
+.equ FLOATP_SYM,     161
+.equ LOGOR_SYM,      165
+.equ LOGAND_SYM,     169
+.equ LOGXOR_SYM,     173
+.equ LEFTSHIFT_SYM,  177
+.equ FUNCTION_SYM,   181
+.equ FUNARG_SYM,     185
+.equ PROG_SYM,       189
+.equ GO_SYM,         193
+.equ RETURN_SYM,     197
+.equ SETQ_SYM,       201
+.equ SET_SYM,        205
+.equ GET_SYM,        209
+.equ DEFLIST_SYM,    213
+.equ REMPROP_SYM,    217
+.equ FLAG_SYM,       221
+.equ REMFLAG_SYM,    225
+.equ ARRAY_SYM,      229
+.equ ARRAYOBJ_SYM,   233
+
+    .text
+
+main:
+    push    %rbx
+    mov     %rsi, %rbx           /* argv, saved before any other call clobbers rsi */
+    mov     %rdi, argc_saved(%rip)  /* argc, saved to memory (keeps push-count/stack
+                                        alignment simple -- an extra register push
+                                        here would need a matching pad, this doesn't) */
+
+    lea     heap(%rip), %rax
+    mov     %rax, heap_ptr(%rip)
+    lea     strheap(%rip), %rax
+    mov     %rax, strheap_ptr(%rip)
+    movq    $0, symtab_count(%rip)
+
+    lea     sym_NIL(%rip), %rdi
+    call    intern                /* guarantees NIL_SYM == 1 */
+    lea     sym_T(%rip), %rdi
+    call    intern                /* guarantees T_SYM == 3 */
+    lea     sym_QUOTE(%rip), %rdi
+    call    intern
+    lea     sym_ATOM(%rip), %rdi
+    call    intern
+    lea     sym_EQ(%rip), %rdi
+    call    intern
+    lea     sym_COND(%rip), %rdi
+    call    intern
+    lea     sym_CAR(%rip), %rdi
+    call    intern
+    lea     sym_CDR(%rip), %rdi
+    call    intern
+    lea     sym_CONS(%rip), %rdi
+    call    intern
+    lea     sym_LABEL(%rip), %rdi
+    call    intern
+    lea     sym_LAMBDA(%rip), %rdi
+    call    intern
+    lea     sym_DEFINE(%rip), %rdi
+    call    intern
+    lea     sym_ZEROP(%rip), %rdi
+    call    intern
+    lea     sym_TIMES(%rip), %rdi
+    call    intern
+    lea     sym_DIFFERENCE(%rip), %rdi
+    call    intern
+    lea     sym_PLUS(%rip), %rdi
+    call    intern
+    lea     sym_NULL(%rip), %rdi
+    call    intern
+    lea     sym_EQUAL(%rip), %rdi
+    call    intern
+    lea     sym_LIST(%rip), %rdi
+    call    intern
+    lea     sym_AND(%rip), %rdi
+    call    intern
+    lea     sym_OR(%rip), %rdi
+    call    intern
+    lea     sym_NOT(%rip), %rdi
+    call    intern
+    lea     sym_RPLACA(%rip), %rdi
+    call    intern
+    lea     sym_RPLACD(%rip), %rdi
+    call    intern
+    lea     sym_MINUS(%rip), %rdi
+    call    intern
+    lea     sym_ADD1(%rip), %rdi
+    call    intern
+    lea     sym_SUB1(%rip), %rdi
+    call    intern
+    lea     sym_MAX(%rip), %rdi
+    call    intern
+    lea     sym_MIN(%rip), %rdi
+    call    intern
+    lea     sym_RECIP(%rip), %rdi
+    call    intern
+    lea     sym_QUOTIENT(%rip), %rdi
+    call    intern
+    lea     sym_REMAINDER(%rip), %rdi
+    call    intern
+    lea     sym_DIVIDE(%rip), %rdi
+    call    intern
+    lea     sym_EXPT(%rip), %rdi
+    call    intern
+    lea     sym_LESSP(%rip), %rdi
+    call    intern
+    lea     sym_GREATERP(%rip), %rdi
+    call    intern
+    lea     sym_ONEP(%rip), %rdi
+    call    intern
+    lea     sym_MINUSP(%rip), %rdi
+    call    intern
+    lea     sym_NUMBERP(%rip), %rdi
+    call    intern
+    lea     sym_FIXP(%rip), %rdi
+    call    intern
+    lea     sym_FLOATP(%rip), %rdi
+    call    intern
+    lea     sym_LOGOR(%rip), %rdi
+    call    intern
+    lea     sym_LOGAND(%rip), %rdi
+    call    intern
+    lea     sym_LOGXOR(%rip), %rdi
+    call    intern
+    lea     sym_LEFTSHIFT(%rip), %rdi
+    call    intern
+    lea     sym_FUNCTION(%rip), %rdi
+    call    intern
+    lea     sym_FUNARG(%rip), %rdi
+    call    intern
+    lea     sym_PROG(%rip), %rdi
+    call    intern
+    lea     sym_GO(%rip), %rdi
+    call    intern
+    lea     sym_RETURN(%rip), %rdi
+    call    intern
+    lea     sym_SETQ(%rip), %rdi
+    call    intern
+    lea     sym_SET(%rip), %rdi
+    call    intern
+    lea     sym_GET(%rip), %rdi
+    call    intern
+    lea     sym_DEFLIST(%rip), %rdi
+    call    intern
+    lea     sym_REMPROP(%rip), %rdi
+    call    intern
+    lea     sym_FLAG(%rip), %rdi
+    call    intern
+    lea     sym_REMFLAG(%rip), %rdi
+    call    intern
+    lea     sym_ARRAY(%rip), %rdi
+    call    intern
+    lea     sym_ARRAYOBJ(%rip), %rdi
+    call    intern
+
+    movq    $NIL_SYM, global_env(%rip)
+
+    /* Auto-load startup.lisp, silently, if it exists in the current
+     * directory -- before anything else, so its DEFINEs are already
+     * in global_env for both file mode and the REPL. fopen returning
+     * NULL (no such file) is not an error here, just "no startup
+     * library today" -- skip cleanly, same as any other run. */
+    lea     fname_startup(%rip), %rdi
+    lea     fmt_mode_r(%rip), %rsi
+    call    fopen
+    test    %rax, %rax
+    jz      .no_startup
+    mov     %rax, %r12
+    lea     filebuf(%rip), %rdi
+    mov     $1, %rsi
+    mov     $65535, %rdx
+    mov     %r12, %rcx
+    call    fread
+    lea     filebuf(%rip), %rdi
+    movb    $0, (%rdi,%rax,1)
+    mov     %r12, %rdi
+    call    fclose
+    lea     filebuf(%rip), %rax
+    mov     %rax, input_ptr(%rip)
+    call    process_buffer
+.no_startup:
+
+    /* argc < 2 (no file argument) -> interactive REPL on stdin.
+     * argc >= 2 -> load argv[1] and process it in one pass, as before. */
+    cmpq    $2, argc_saved(%rip)
+    jl      .repl_mode
+
+    /* Load the program from the file named in argv[1]. */
+    mov     8(%rbx), %rdi        /* argv[1] */
+    lea     fmt_mode_r(%rip), %rsi
+    call    fopen
+    mov     %rax, %r12           /* FILE* */
+    lea     filebuf(%rip), %rdi
+    mov     $1, %rsi
+    mov     $65535, %rdx
+    mov     %r12, %rcx
+    call    fread                /* rax = bytes actually read */
+    lea     filebuf(%rip), %rdi
+    movb    $0, (%rdi,%rax,1)    /* null-terminate the loaded text */
+    mov     %r12, %rdi
+    call    fclose
+
+    lea     filebuf(%rip), %rax
+    mov     %rax, input_ptr(%rip)
+    call    process_buffer
+    jmp     .main_done
+
+.repl_mode:
+    lea     fmt_prompt(%rip), %rdi
+    xor     %eax, %eax
+    call    printf
+    xor     %edi, %edi           /* fflush(NULL) -- flush all open streams, so the
+                                     prompt appears before fgets blocks for input */
+    call    fflush
+
+    lea     linebuf(%rip), %rdi
+    mov     $4096, %rsi
+    mov     stdin(%rip), %rdx
+    call    fgets
+    test    %rax, %rax
+    jz      .repl_eof            /* NULL = EOF (Ctrl-D) */
+
+    lea     linebuf(%rip), %rax
+    mov     %rax, input_ptr(%rip)
+    call    process_buffer
+    jmp     .repl_mode
+
+.repl_eof:
+    lea     fmt_newline(%rip), %rdi
+    xor     %eax, %eax
+    call    printf
+
+.main_done:
+    pop     %rbx
+    xor     %eax, %eax
+    ret
+
+/* process_buffer() -- reads and evaluates every top-level form from
+ * the current input_ptr until a NUL byte, printing each result
+ * (DEFINE prints nothing). Shared by both file mode and REPL mode,
+ * so the two don't silently diverge in behavior. */
+process_buffer:
+    push    %rbx
+.pb_loop:
+    call    skip_ws
+    mov     input_ptr(%rip), %rax
+    movzx   (%rax), %eax
+    test    %al, %al
+    jz      .pb_done
+
+    call    read_sexpr
+    mov     %rax, %rbx           /* the top-level form just read */
+
+    /* is it (DEFINE name expr)? -- DEFINE is top-level-only. */
+    mov     %rbx, %rdi
+    call    atomp
+    test    %rax, %rax
+    jnz     .pb_eval_plain
+    mov     %rbx, %rdi
+    call    car
+    cmp     $DEFINE_SYM, %rax
+    jne     .pb_try_array
+
+    /* DEFINE binds name to the RAW, unevaluated form -- not eval[expr].
+     * eval only recognizes LABEL/LAMBDA as the head of a call, never
+     * as a standalone value-producing expression; plain_call's assoc
+     * needs to get the raw (LABEL name (LAMBDA ...)) form back so it
+     * can reconstruct and re-eval the call correctly. This makes
+     * DEFINE a function-definition form (like defun), not a general
+     * evaluated-constant binding -- a scoping choice, not an oversight. */
+    mov     %rbx, %rdi
+    call    cadr                 /* name */
+    push    %rax
+    mov     %rbx, %rdi
+    call    caddr                /* raw definition form, e.g. (LABEL ...) */
+    pop     %rdi                 /* name */
+    mov     %rax, %rsi
+    call    cons                 /* (name . raw-form) */
+    mov     %rax, %rdi
+    mov     global_env(%rip), %rsi
+    call    cons                 /* ((name.value) . global_env) */
+    mov     %rax, global_env(%rip)
+    jmp     .pb_loop            /* DEFINE prints nothing; silent success */
+
+.pb_try_array:
+    /* is it (ARRAY specs)? -- ARRAY is top-level-only for the same
+     * architectural reason as DEFINE (ст.27-28, "4.4 The Array
+     * Feature"): it must mutate global_env directly, and a nested
+     * eval call's local `a` parameter never observes a mid-flight
+     * global_env mutation made deeper in the same call chain -- only
+     * a fresh top-level eval (which re-reads global_env) would.
+     * Prints nothing, matching DEFINE's own silent convention -- a
+     * reconstruction-derived, noted choice (the manual doesn't state
+     * a return value for array[...] itself), not a claimed
+     * historical fact. */
+    cmp     $ARRAY_SYM, %rax
+    jne     .pb_eval_plain
+    mov     %rbx, %rdi
+    call    cadr                 /* specs list */
+    mov     %rax, %rdi
+    call    array_declare_all
+    jmp     .pb_loop
+
+.pb_eval_plain:
+    mov     %rbx, %rdi
+    mov     global_env(%rip), %rsi
+    call    eval
+    mov     %rax, %rdi
+    call    print_sexpr
+    lea     fmt_newline(%rip), %rdi
+    xor     %eax, %eax
+    call    printf
+    jmp     .pb_loop
+
+.pb_done:
+    pop     %rbx
+    ret
+
+    .section .rodata
+sym_QUOTE:  .asciz "QUOTE"
+sym_ATOM:   .asciz "ATOM"
+sym_EQ:     .asciz "EQ"
+sym_COND:   .asciz "COND"
+sym_CAR:    .asciz "CAR"
+sym_CDR:    .asciz "CDR"
+sym_CONS:   .asciz "CONS"
+sym_LABEL:  .asciz "LABEL"
+sym_LAMBDA: .asciz "LAMBDA"
+sym_DEFINE: .asciz "DEFINE"
+sym_ZEROP:      .asciz "ZEROP"
+sym_TIMES:      .asciz "TIMES"
+sym_DIFFERENCE: .asciz "DIFFERENCE"
+sym_PLUS:       .asciz "PLUS"
+sym_NULL:       .asciz "NULL"
+sym_EQUAL:      .asciz "EQUAL"
+sym_LIST:       .asciz "LIST"
+sym_AND:        .asciz "AND"
+sym_OR:         .asciz "OR"
+sym_NOT:        .asciz "NOT"
+sym_RPLACA:     .asciz "RPLACA"
+sym_RPLACD:     .asciz "RPLACD"
+sym_MINUS:      .asciz "MINUS"
+sym_ADD1:       .asciz "ADD1"
+sym_SUB1:       .asciz "SUB1"
+sym_MAX:        .asciz "MAX"
+sym_MIN:        .asciz "MIN"
+sym_RECIP:      .asciz "RECIP"
+sym_QUOTIENT:   .asciz "QUOTIENT"
+sym_REMAINDER:  .asciz "REMAINDER"
+sym_DIVIDE:     .asciz "DIVIDE"
+sym_EXPT:       .asciz "EXPT"
+sym_LESSP:      .asciz "LESSP"
+sym_GREATERP:   .asciz "GREATERP"
+sym_ONEP:       .asciz "ONEP"
+sym_MINUSP:     .asciz "MINUSP"
+sym_NUMBERP:    .asciz "NUMBERP"
+sym_FIXP:       .asciz "FIXP"
+sym_FLOATP:     .asciz "FLOATP"
+sym_LOGOR:      .asciz "LOGOR"
+sym_LOGAND:     .asciz "LOGAND"
+sym_LOGXOR:     .asciz "LOGXOR"
+sym_LEFTSHIFT:  .asciz "LEFTSHIFT"
+sym_FUNCTION:   .asciz "FUNCTION"
+sym_FUNARG:     .asciz "FUNARG"
+sym_PROG:       .asciz "PROG"
+sym_GO:         .asciz "GO"
+sym_RETURN:     .asciz "RETURN"
+sym_SETQ:       .asciz "SETQ"
+sym_SET:        .asciz "SET"
+sym_GET:        .asciz "GET"
+sym_DEFLIST:    .asciz "DEFLIST"
+sym_REMPROP:    .asciz "REMPROP"
+sym_FLAG:       .asciz "FLAG"
+sym_REMFLAG:    .asciz "REMFLAG"
+sym_ARRAY:      .asciz "ARRAY"
+sym_ARRAYOBJ:   .asciz "ARRAYOBJ"
+
+    .section .note.GNU-stack,"",@progbits
+1', %al
+    jne     .ps8_next
+    or      $1, %r8
+.ps8_next:
+    inc     %rcx
+    jmp     .ps8_loop
+.ps8_done:
+    mov     %r8, %rdi
+    call    mksid
     ret
 
 /* looks_numeric(rdi=tokbuf, null-terminated) -> rax (1/0):
