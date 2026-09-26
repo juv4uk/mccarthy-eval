@@ -1,0 +1,300 @@
+NIL
+((C D NIL) A)
+(((B C)) A ((NIL (B B) (B D NIL B)) NIL NIL) C (NIL NIL NIL NIL))
+(A ((NIL C (B)) ((B C C) (A D) A NIL) A B) NIL (C ((A) (B A D B) C B) (C (NIL C) NIL) NIL))
+NIL
+(A NIL D NIL)
+NIL
+((NIL (NIL) NIL ((A A) D (D B NIL D))))
+(C ((A C (A C) B) NIL ((NIL D A C) (A) B (D B)) NIL) (C ((NIL D) NIL C) (A (NIL A) (A D B)) B) (B (D)))
+NIL
+NIL
+NIL
+(B)
+NIL
+NIL
+NIL
+((C) (D C A) D)
+NIL
+C
+(NIL NIL)
+(((NIL (B A D A) (C D A D) NIL) NIL B (NIL)) A (NIL C (B (A))) A (((B A A) B B B) NIL) (A) ((B) NIL B) (((A B A NIL) NIL (B D NIL) D) ((D)) NIL NIL))
+(NIL)
+NIL
+(((NIL) ((A B C) NIL (A B) (B))) (((B A) (C) (A) (C C C)) ((C) (C) (C C A C))) NIL NIL C)
+(((D) NIL NIL (A C D D)) C)
+NIL
+C
+D
+((NIL NIL))
+(((NIL B D C) (NIL D NIL) NIL (B NIL C D)))
+NIL
+(A D B D D B C B B D D C D C C D C A D D B A)
+(T (C A D))
+((C C C B) (NIL C B NIL))
+NIL
+(NIL ((C (D A D))) (((NIL NIL)) NIL))
+(NIL (((C B) A A (D C)) (B) (C (A C A) (B D A C) (NIL C A)) D) NIL (((B) A NIL) ((C D D) NIL NIL) ((C NIL A) A C) ((C B B C) (B) (A) (A C C A))) (NIL) (((NIL NIL NIL D) A B) ((D A) D A) NIL ((B) (B) (NIL A A B) (NIL D))) (NIL C) NIL (((B) (D D C C) (B D A))))
+(NIL (NIL) D ((NIL A (B C C) NIL) (NIL (C) D)) D)
+NIL
+(A)
+((A C) NIL (D NIL B A))
+NIL
+NIL
+NIL
+((NIL ((C D) (C C D) (B) C)) (((C NIL) NIL) B) (B ((A) (A)) (B (D NIL A B) (NIL A) NIL)) B D NIL)
+A
+NIL
+NIL
+(C A D C D B D D B D A D A A A D D C C A)
+NIL
+NIL
+NIL
+(B D A B D)
+(C B)
+NIL
+NIL
+NIL
+((((D A)) B) ((NIL) D (D (NIL C) (A B) NIL)) (NIL D))
+B
+NIL
+NIL
+NIL
+(B ((NIL) NIL) C)
+((NIL NIL B D) (B D NIL) NIL)
+((A NIL D C) NIL (A A B))
+(C D C B A D B D)
+NIL
+D
+NIL
+NIL
+((((NIL C C) B (D)) NIL NIL NIL) (((D) B A C)) NIL)
+NIL
+((D C D NIL) D B (A))
+T
+((NIL C NIL C))
+((A) (B) NIL D)
+T
+(NIL)
+NIL
+NIL
+NIL
+(B A D B A D D C D A D B A B C)
+NIL
+NIL
+NIL
+((A C NIL) NIL)
+NIL
+NIL
+T
+NIL
+(NIL)
+C
+NIL
+(NIL (NIL D) (D D) NIL)
+NIL
+(D (((B NIL NIL)) D B ((A C))) (D NIL))
+T
+((NIL A (A (C C D C) NIL (D A)) (NIL (A C NIL C) A)))
+C
+T
+C
+NIL
+(D ((NIL) A ((B C A) (C D C))))
+NIL
+((NIL) NIL)
+NIL
+(C A)
+((D))
+NIL
+C
+NIL
+NIL
+NIL
+D
+NIL
+NIL
+NIL
+NIL
+(((NIL NIL) (B NIL NIL)))
+NIL
+NIL
+A
+((NIL A) B)
+((NIL NIL (C A B D)) (C NIL C B) NIL)
+T
+(D C D D A B)
+NIL
+NIL
+NIL
+(C B A NIL (B))
+(NIL (A B) NIL)
+((D (C (NIL C A NIL) (D D C) (D A D A)) ((A A C D) NIL NIL) ((D D) (D NIL D A) D)) C)
+((B A A) D)
+D
+(NIL D ((NIL A (D) (NIL)) ((D) (D NIL C) (A) (C A C))) D)
+NIL
+((((NIL C C NIL) NIL (B C D) NIL) NIL (NIL)) (B ((C B D)) D NIL) NIL)
+NIL
+((B ((B C) D C) C D) (NIL D D))
+NIL
+(C)
+B
+NIL
+((D A A B))
+(A (NIL) (A C NIL) (B))
+(A)
+(A (((B B)) NIL ((D) (D B D NIL) (C NIL A) (A NIL A)) C) NIL)
+NIL
+NIL
+NIL
+NIL
+(D A B)
+NIL
+((((A)) C ((NIL A B A) (A) (A) (C D B B))) (A) (((C) (A A NIL D)) (NIL NIL (D) NIL)))
+D
+((((NIL) D (D C B)) (B)) NIL C)
+B
+(((A (NIL C B)) ((A B B) (D A) B) NIL (A D)) (((B C A B) (NIL) (A D B A)) (NIL NIL)))
+((A (B (NIL D B) (B) NIL)) (B NIL) NIL NIL)
+NIL
+NIL
+NIL
+NIL
+NIL
+((C (A D NIL) (NIL B D)) . T)
+(A B C (((A D) (A A NIL C) (B D D C) NIL)) A (C A) NIL)
+NIL
+B
+NIL
+(A (NIL ((C) A D)) (NIL ((D) (NIL A NIL C))) (D NIL (D NIL A NIL) A))
+NIL
+(C)
+D
+NIL
+((NIL A (NIL D (NIL) (D NIL B B))) NIL (A (C) ((D A) NIL (D NIL) (D A C C)) C) D (B B (NIL (A C) NIL (B D)) B) C)
+((NIL D (NIL D B) NIL))
+NIL
+NIL
+((((C C) (NIL C A C) D (D C))) NIL ((NIL) NIL NIL (B A (NIL NIL))))
+A
+D
+(((NIL) ((C NIL D) NIL (A B) (A C D)) (A (A NIL NIL) NIL NIL)) (((C A A C) NIL C A) C (NIL NIL)) ((B)) ((C (C B)) (D) ((NIL A NIL D) (D A D NIL) (B) (C D B B)) NIL) B)
+(NIL C (((C B D C) C C NIL) NIL C))
+(B)
+T
+C
+NIL
+NIL
+NIL
+NIL
+NIL
+NIL
+NIL
+(NIL NIL C (((A D C A) (A B C) C B) (C)) (NIL D A C))
+NIL
+NIL
+NIL
+((NIL ((C B C) (C C A D)) A) NIL NIL D (C ((C) C (A C D C)) D) C)
+NIL
+NIL
+(NIL)
+(NIL)
+(NIL (((A B) NIL) C) (((A B A) C NIL) ((D) (NIL C D) (NIL C) (B NIL)) D ((C))) NIL)
+NIL
+NIL
+(((A C (A)) (C (NIL NIL B) NIL) D B) NIL (B (NIL (C) (A)) D))
+(NIL ((NIL NIL)) C (NIL D (NIL (B B C D)) ((A B NIL) NIL)) A NIL)
+((NIL C NIL) (NIL B))
+((((B NIL) (NIL B) D NIL) A B ((A D) (D D D) A)) D)
+NIL
+(D B)
+NIL
+C
+((B))
+NIL
+T
+(NIL)
+NIL
+NIL
+(((A A A) (A D) A (NIL NIL NIL)))
+T
+((NIL) (D C C))
+(((NIL D D NIL) (((B) (A D D D) (B A A NIL)) (C D D B) (A B C) A (NIL B)) (((NIL B NIL)) (C NIL D) D (B C A) (B))))
+B
+((NIL D A) (NIL A A) (D) (NIL B))
+NIL
+NIL
+NIL
+(NIL NIL ((NIL NIL NIL) (C A C A) (A)) . B)
+((D A A) (D) NIL (A D B A))
+NIL
+(T . T)
+T
+NIL
+NIL
+NIL
+((((D B NIL) D NIL) (A) NIL) (((NIL A D A) (B) (D B NIL) (NIL)) (C NIL A) NIL) (A ((B)) ((A) C) ((B) (C D B))))
+NIL
+NIL
+NIL
+(A A B B)
+NIL
+NIL
+((A A A) A C)
+(A D B B A D)
+C
+NIL
+NIL
+(T ((A B C)) NIL C)
+((NIL (A)) (C A D A) (NIL D C))
+NIL
+B
+D
+T
+NIL
+D
+((NIL ((A) (C)) ((D)) NIL))
+(NIL)
+(A A C D A A C D A A B C B D A B A D B A)
+((A) (A D C B) A C)
+(NIL)
+(T)
+(B NIL (((B) NIL)) ((B NIL) ((A D NIL D) (B) (C)) ((A C C) (NIL NIL NIL) (C) (NIL A)) (C (B C) (C C))) (((D B) (NIL)) NIL ((NIL B NIL C) (C) NIL NIL)) (((D) B A C)) (NIL))
+NIL
+T
+NIL
+((((NIL B NIL A) B (D NIL D B)) (B (D) D (B C)) A) A (((NIL C)) ((NIL A))) NIL)
+NIL
+(NIL (((B) (D NIL NIL) (NIL D A B) (C C C B))) C A)
+((D NIL ((C) (D D C C) (A) (D C A))) (((NIL) (C D) NIL) (A A) ((C A A) (NIL A NIL) (D)) (NIL D (A C))) (NIL D))
+(NIL)
+(((((NIL) B))) . C)
+NIL
+A
+(T (D . C) C D A)
+((((B A D B) (D B D))) NIL (A))
+((NIL) B (C D A) D (B C A))
+NIL
+NIL
+NIL
+NIL
+(A NIL)
+NIL
+NIL
+NIL
+(NIL (((NIL A NIL) A) C) NIL NIL)
+(D D B C C D B D D D A D C D)
+(A A D)
+NIL
+D
+NIL
+NIL
+NIL
+(B B D C A A C C D B A B B A B C C A C)
+(D)
+NIL
+(NIL)
+NIL
+NIL
+(((NIL . C) ((B A A B) (NIL NIL D NIL))))
