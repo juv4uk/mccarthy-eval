@@ -1,0 +1,3 @@
+(QUOTE A)
+)))
+(QUOTE B)

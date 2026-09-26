@@ -86,6 +86,7 @@ run_gate "appendix-b-prog (#7 PROG/GO, Appendix B + main body)" "tests/appendix-
 run_gate "reader-dotted-pairs (#7 reader/printer asymmetry fix)" "tests/reader-dotted-pairs/run.sh"
 run_gate "appendix-b-proplists (#7 GET/DEFLIST/REMPROP)" "tests/appendix-b-proplists/run.sh"
 run_gate "array-feature (#7 ARRAY/SET, ст.27-28)" "tests/array-feature/run.sh"
+run_gate "historical-reclamation (#65 free-storage list + reclamation cycle, 1960 с.26-27)" "tests/historical-reclamation/run.sh"
 
 # Round 2 -- prove determinism, not just single-run success
 echo "--- Determinism check: rebuild and rerun everything a second time ---"
@@ -108,6 +109,7 @@ run_gate "appendix-b-prog (round 2, output-identity check)" "tests/appendix-b-pr
 run_gate "reader-dotted-pairs (round 2, output-identity check)" "tests/reader-dotted-pairs/run.sh"
 run_gate "appendix-b-proplists (round 2, output-identity check)" "tests/appendix-b-proplists/run.sh"
 run_gate "array-feature (round 2, output-identity check)" "tests/array-feature/run.sh"
+run_gate "historical-reclamation (round 2, output-identity check)" "tests/historical-reclamation/run.sh"
 echo
 
 echo "--- Known regression witnesses covered by this closeout ---"

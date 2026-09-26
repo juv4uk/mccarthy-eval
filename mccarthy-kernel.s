@@ -16,6 +16,16 @@
  */
 
     .section .rodata
+env_gc_stats:        .asciz "MCCARTHY_GC_STATS"
+fmt_gc_stats:        .asciz "GC-STATS cycles=%ld last-reclaimed=%ld used-cells=%ld capacity=%ld\n"
+msg_stack_exhausted: .asciz "CONDITION kind=STACK-EXHAUSTED\n"
+msg_heap_exhausted:  .asciz "CONDITION kind=HEAP-EXHAUSTED\n"
+msg_symtab_full:     .asciz "CONDITION kind=SYMTAB-FULL\n"
+msg_strheap_full:    .asciz "CONDITION kind=STRHEAP-FULL\n"
+msg_token_too_long:  .asciz "CONDITION kind=TOKEN-TOO-LONG\n"
+msg_unexpected_eof:  .asciz "CONDITION kind=UNEXPECTED-EOF\n"
+msg_unexpected_close: .asciz "CONDITION kind=UNEXPECTED-CLOSE\n"
+msg_source_too_large: .asciz "CONDITION kind=SOURCE-TOO-LARGE\n"
 fmt_str:
     .asciz "%s"
 fmt_int:
@@ -47,23 +57,40 @@ sym_NIL:    .asciz "NIL"
 sym_T:      .asciz "T"
 
     .section .bss
-    .align 16
-heap:                       /* cons-cell heap, bump-allocated */
-    .skip 16 * 65536
-heap_ptr:
-    .skip 8
+/* Розміри пам'яті (reconstruction-derived, під Intel Core i5-6400):
+ * HEAP_CELLS комірок cons по 16 Б; бітова карта позначок збирача
+ * займає HEAP_CELLS/8 Б = 256 КіБ — рівно L2 одного ядра Skylake, тож
+ * фаза позначення працює з кешу. Для порівняння: IBM 704 у статті
+ * McCarthy 1960 мав ~15 000 вільних регістрів. */
+.equ HEAP_CELLS,   2097152
+.equ SYMTAB_CAP,   65536
+.equ STRHEAP_SIZE, 1048576
+.equ TOKBUF_SIZE,  256
+.equ FILEBUF_SIZE, 16777216
 
     .align 16
 strheap:                    /* permanent storage for interned symbol names */
-    .skip 1 * 1048576
+    .skip STRHEAP_SIZE
+strheap_end:
 strheap_ptr:
     .skip 8
 
 symtab:                     /* array of pointers to interned name strings */
-    .skip 8 * 65536
+    .skip 8 * SYMTAB_CAP
 symtab_count:
     .skip 8
 
+filebuf:                    /* loaded contents of the argv[1] .lisp file */
+    .skip FILEBUF_SIZE
+
+/* ── base registers (McCarthy 1960, с. 26: «a fixed set of base registers
+ * in the program which contains the locations of list structures that are
+ * accessible to the program») — усі глобальні змінні, що можуть тримати
+ * Lisp-значення, лежать між gc_roots_begin і gc_roots_end; збирач сміття
+ * консервативно сканує цю область як корені. Нове глобальне Lisp-значення
+ * додавати лише сюди. ── */
+    .align 16
+gc_roots_begin:
 proplist_table:             /* one property-list head per symbol, index-parallel
                               * to symtab (Appendix B ст.58-59, GET/DEFLIST/
                               * REMPROP) -- each slot holds a flat, alternating
@@ -72,16 +99,13 @@ proplist_table:             /* one property-list head per symbol, index-parallel
                               * Initialized to NIL_SYM per-symbol in intern, not
                               * here -- NIL_SYM is 1, not 0, so a zeroed .skip
                               * region would NOT already mean "empty". */
-    .skip 8 * 65536
+    .skip 8 * SYMTAB_CAP
 
 tokbuf:                     /* scratch buffer for the token currently being read */
-    .skip 256
+    .skip TOKBUF_SIZE
 
 input_ptr:                  /* reader's current position in the source buffer */
     .skip 8
-
-filebuf:                    /* loaded contents of the argv[1] .lisp file */
-    .skip 65536
 
 linebuf:                    /* one line of REPL input at a time */
     .skip 4096
@@ -89,11 +113,42 @@ linebuf:                    /* one line of REPL input at a time */
 sidbuf:                     /* exact 8-bit SID presentation + NUL */
     .skip 9
 
+    .align 8
 argc_saved:
     .skip 8
 
 global_env:
     .skip 8
+gc_roots_end:
+
+/* ── free storage (McCarthy 1960, с. 26, розділ 4c) ── */
+    .align 16
+heap:                       /* cons-cell area: bump-allocated until full, then
+                             * reclaimed cells come from free_list */
+    .skip 16 * HEAP_CELLS
+heap_end:
+heap_ptr:                   /* high-water mark of ever-allocated cells */
+    .skip 8
+free_list:                  /* FREE: «A certain register, FREE, in the program
+                             * contains the location of the first register in
+                             * this list» (с. 26); next link lives in cdr */
+    .skip 8
+stack_base:                 /* top of the push-down list (native stack) for root scan */
+    .skip 8
+stack_limit:                /* lowest safe rsp for eval (push-down list guard) */
+    .skip 8
+gc_cycles:                  /* number of reclamation cycles run */
+    .skip 8
+gc_last_reclaimed:          /* cells returned to FREE by the last cycle */
+    .skip 8
+gc_markstack_top:
+    .skip 8
+    .align 64
+gc_markbits:                /* one «sign» bit per cell (see reclaim) */
+    .skip HEAP_CELLS / 8
+    .align 16
+gc_markstack:               /* explicit marking stack: each cell pushed at most once */
+    .skip 8 * HEAP_CELLS
 
     .text
     .globl main
@@ -114,11 +169,273 @@ global_env:
  * Primitives (unchanged in spirit from mccarthy-eval.s)
  * ================================================================= */
 cons:
-    mov     heap_ptr(%rip), %rax
+    /* McCarthy 1960, с. 26: «When a word is required to form some additional
+     * list structure, the first word on the free-storage list is taken and
+     * the number in register FREE is changed to become the location of the
+     * second word on the free-storage list.»  Контракт реєстрів той самий,
+     * що й у старого bump-cons: змінюються лише rax і rdx. */
+    mov     free_list(%rip), %rax
+    test    %rax, %rax
+    jz      .cons_bump
+    mov     8(%rax), %rdx            /* next free register (cdr link) */
+    mov     %rdx, free_list(%rip)
+.cons_fill:
     mov     %rdi, (%rax)
     mov     %rsi, 8(%rax)
+    ret
+.cons_bump:
+    /* Ще не використана частина області: бере наступну комірку. */
+    mov     heap_ptr(%rip), %rax
+    lea     heap_end(%rip), %rdx
+    cmp     %rdx, %rax
+    jae     .cons_reclaim
     lea     16(%rax), %rdx
     mov     %rdx, heap_ptr(%rip)
+    jmp     .cons_fill
+.cons_reclaim:
+    /* «Nothing happens until the program runs out of free storage. When a
+     * free register is wanted, and there is none left on the free-storage
+     * list, a reclamation cycle starts.» (с. 27)
+     * Усі регістри, крім rax/rdx, кладуться на стек: так вони стають
+     * частиною push-down list, яку сканує reclaim, і відновлюються після. */
+    push    %rcx
+    push    %rsi
+    push    %rdi
+    push    %r8
+    push    %r9
+    push    %r10
+    push    %r11
+    push    %rbx
+    push    %rbp
+    push    %r12
+    push    %r13
+    push    %r14
+    push    %r15
+    call    reclaim
+    pop     %r15
+    pop     %r14
+    pop     %r13
+    pop     %r12
+    pop     %rbp
+    pop     %rbx
+    pop     %r11
+    pop     %r10
+    pop     %r9
+    pop     %r8
+    pop     %rdi
+    pop     %rsi
+    pop     %rcx
+    mov     free_list(%rip), %rax
+    test    %rax, %rax
+    jz      heap_exhausted
+    mov     8(%rax), %rdx
+    mov     %rdx, free_list(%rip)
+    jmp     .cons_fill
+
+/* reclaim — один «reclamation cycle» McCarthy 1960 (с. 27).
+ *
+ * «First, the program finds all registers accessible from the base registers
+ * and makes their signs negative. [...] If the program encounters a register
+ * in this process which already has a negative sign, it assumes that this
+ * register has already been reached.
+ *  After all of the accessible registers have had their signs changed, the
+ * program goes through the area of memory reserved for the storage of list
+ * structures and puts all the registers whose signs were not changed in the
+ * previous step back on the free-storage list, and makes the signs of the
+ * accessible registers positive again.»
+ *
+ * reconstruction-derived відхилення (див. docs/RECLAMATION-1960.md):
+ *  - «знак» = біт у gc_markbits, бо старший біт слова тут зайнятий
+ *    від'ємними fixnum (тег 11); «повернути знак у плюс» = очистити карту
+ *    перед наступним циклом;
+ *  - base registers = регістри процесора (покладені на стек у cons) +
+ *    увесь стек викликів [rsp, stack_base) + область [gc_roots_begin,
+ *    gc_roots_end); сканування консервативне: будь-яке слово з тегом 00,
+ *    що вказує в зайняту частину області, вважається досяжним;
+ *  - позначення йде явним стеком gc_markstack, а не рекурсією, щоб
+ *    глибокі списки не переповнили стек процесора. */
+reclaim:
+    push    %rbx
+    push    %r12
+    push    %r13
+    push    %r14
+    push    %r15
+    /* очистити позначки для зайнятої частини області */
+    mov     heap_ptr(%rip), %rcx
+    lea     heap(%rip), %rax
+    sub     %rax, %rcx
+    shr     $4, %rcx                 /* rcx = used cells */
+    add     $63, %rcx
+    shr     $6, %rcx                 /* qwords of bitmap */
+    lea     gc_markbits(%rip), %rdi
+    xor     %eax, %eax
+    rep stosq
+    movq    $0, gc_markstack_top(%rip)
+    /* корені: стек (разом із регістрами, покладеними в cons) */
+    lea     8(%rsp), %rdi            /* skip reclaim's own return address area */
+    mov     stack_base(%rip), %rsi
+    call    gc_mark_range
+    /* корені: глобальні base registers */
+    lea     gc_roots_begin(%rip), %rdi
+    lea     gc_roots_end(%rip), %rsi
+    call    gc_mark_range
+    /* sweep: від кінця до початку, щоб FREE ішов за зростанням адрес */
+    movq    $0, free_list(%rip)
+    xor     %r12, %r12               /* reclaimed count */
+    lea     heap(%rip), %rbx
+    mov     heap_ptr(%rip), %r13
+    lea     gc_markbits(%rip), %r14
+.reclaim_sweep:
+    cmp     %rbx, %r13
+    jbe     .reclaim_sweep_done
+    sub     $16, %r13
+    mov     %r13, %rax
+    sub     %rbx, %rax
+    shr     $4, %rax                 /* cell index */
+    bt      %rax, (%r14)
+    jc      .reclaim_sweep            /* «sign» changed: accessible */
+    movq    $0, (%r13)               /* free register: car 0 (never a live car) */
+    mov     free_list(%rip), %rdx
+    mov     %rdx, 8(%r13)
+    mov     %r13, free_list(%rip)
+    inc     %r12
+    jmp     .reclaim_sweep
+.reclaim_sweep_done:
+    mov     %r12, gc_last_reclaimed(%rip)
+    incq    gc_cycles(%rip)
+    pop     %r15
+    pop     %r14
+    pop     %r13
+    pop     %r12
+    pop     %rbx
+    ret
+
+/* gc_mark_range(rdi=begin, rsi=end): кожне 8-байтове слово в [begin,end)
+ * трактується як можливий корінь; потім стек позначення спорожнюється. */
+gc_mark_range:
+    push    %rbx
+    push    %r12
+    mov     %rdi, %rbx
+    mov     %rsi, %r12
+    and     $-8, %rbx
+.gmr_loop:
+    cmp     %r12, %rbx
+    jae     .gmr_drain
+    mov     (%rbx), %rdi
+    call    gc_mark_value
+    add     $8, %rbx
+    jmp     .gmr_loop
+.gmr_drain:
+    mov     gc_markstack_top(%rip), %rax
+    test    %rax, %rax
+    jz      .gmr_done
+    dec     %rax
+    mov     %rax, gc_markstack_top(%rip)
+    lea     gc_markstack(%rip), %rdx
+    mov     (%rdx,%rax,8), %rbx      /* cell address */
+    mov     (%rbx), %rdi             /* car */
+    test    %rdi, %rdi
+    jz      .gmr_drain               /* car 0 = register on free list: do not follow */
+    call    gc_mark_value
+    mov     8(%rbx), %rdi            /* cdr */
+    call    gc_mark_value
+    jmp     .gmr_drain
+.gmr_done:
+    pop     %r12
+    pop     %rbx
+    ret
+
+/* gc_mark_value(rdi=word): якщо слово — вказівник у зайняту частину області
+ * (тег 00), позначити його комірку («make its sign negative») і покласти на
+ * стек позначення; уже позначену — пропустити. Змінює rax, rcx, rdx. */
+gc_mark_value:
+    test    $3, %dil
+    jnz     .gmv_ret
+    lea     heap(%rip), %rax
+    cmp     %rax, %rdi
+    jb      .gmv_ret
+    cmp     heap_ptr(%rip), %rdi
+    jae     .gmv_ret
+    sub     %rax, %rdi
+    shr     $4, %rdi                 /* cell index (interior pointers round down) */
+    lea     gc_markbits(%rip), %rdx
+    bts     %rdi, (%rdx)
+    jc      .gmv_ret                 /* «already has a negative sign» */
+    shl     $4, %rdi
+    add     %rax, %rdi               /* cell address */
+    mov     gc_markstack_top(%rip), %rcx
+    lea     gc_markstack(%rip), %rdx
+    mov     %rdi, (%rdx,%rcx,8)
+    inc     %rcx
+    mov     %rcx, gc_markstack_top(%rip)
+.gmv_ret:
+    ret
+
+/* Названі fail-closed умови ресурсів: повідомлення в stderr, stdout
+ * скидається (exit), код виходу 3. rdi = рядок повідомлення. */
+fatal_condition:
+    and     $-16, %rsp
+    push    %rdi
+    push    %rdi                     /* keep 16-byte alignment */
+    xor     %edi, %edi
+    call    fflush                   /* earlier results first: chronological output */
+    pop     %rdi
+    pop     %rdi
+    mov     %rdi, %rsi
+    mov     stderr(%rip), %rdi
+    xor     %eax, %eax
+    call    fprintf
+    mov     $3, %edi
+    call    exit
+
+heap_exhausted:
+    lea     msg_heap_exhausted(%rip), %rdi
+    jmp     fatal_condition
+
+source_too_large:
+    lea     msg_source_too_large(%rip), %rdi
+    jmp     fatal_condition
+
+stack_exhausted:
+    lea     msg_stack_exhausted(%rip), %rdi
+    jmp     fatal_condition
+
+/* setup_pushdown_list: push-down list (стек) під машину власника —
+ * м'яка межа стеку піднімається до PUSHDOWN_BYTES (1 ГіБ), якщо жорстка
+ * межа дозволяє; stack_limit = stack_base - межа + запас 256 КіБ, щоб
+ * eval встиг назвати умову до справжнього переповнення. */
+.equ PUSHDOWN_BYTES, 1073741824
+.equ RLIMIT_STACK,   3
+setup_pushdown_list:
+    sub     $24, %rsp                /* rlimit {cur,max} + alignment */
+    mov     $RLIMIT_STACK, %edi
+    mov     %rsp, %rsi
+    call    getrlimit
+    mov     (%rsp), %rax             /* soft */
+    mov     8(%rsp), %rcx            /* hard */
+    mov     $PUSHDOWN_BYTES, %rdx
+    cmp     %rdx, %rax
+    jae     .spl_have                /* soft already >= 1 GiB (or infinity) */
+    cmp     %rdx, %rcx
+    jb      .spl_have                /* hard limit too low: keep soft */
+    mov     %rdx, (%rsp)
+    mov     $RLIMIT_STACK, %edi
+    mov     %rsp, %rsi
+    call    setrlimit
+    test    %eax, %eax
+    jnz     .spl_have
+    mov     $PUSHDOWN_BYTES, %rax
+.spl_have:
+    mov     $PUSHDOWN_BYTES, %rdx
+    cmp     %rdx, %rax
+    jbe     .spl_limit
+    mov     %rdx, %rax               /* cap infinity/huge at 1 GiB for the guard */
+.spl_limit:
+    mov     stack_base(%rip), %rcx
+    sub     %rax, %rcx
+    add     $262144, %rcx
+    mov     %rcx, stack_limit(%rip)
+    add     $24, %rsp
     ret
 
 /* car(rdi=val) -> rax. З перевіркою типу: будь-який не-вказівник
@@ -1399,6 +1716,9 @@ resolve_core1_callable_sid:
  * CDR/CONS/LABEL/LAMBDA/plain-call, matching the 1960 paper in full.
  * ================================================================= */
 eval:
+    /* push-down list guard: вичерпаний стек — названа умова, не segfault */
+    cmp     stack_limit(%rip), %rsp
+    jb      stack_exhausted
     push    %r12
     push    %r13
     push    %r14
@@ -2903,11 +3223,17 @@ intern:
     or      $1, %rax
     jmp     .intern_done
 .intern_new:
+    cmpq    $SYMTAB_CAP, symtab_count(%rip)
+    jae     .intern_symtab_full
     /* copy name into permanent string heap */
     mov     %r12, %rdi
     call    strlen_z
     mov     %rax, %rdx           /* len */
     mov     strheap_ptr(%rip), %rdi
+    lea     1(%rdi,%rdx,1), %rax
+    lea     strheap_end(%rip), %rcx
+    cmp     %rcx, %rax
+    ja      .intern_strheap_full
     mov     %rdi, %rcx           /* save dest start */
     xor     %rax, %rax
 .intern_copy:
@@ -2934,6 +3260,12 @@ intern:
     pop     %r13
     pop     %r12
     ret
+.intern_symtab_full:
+    lea     msg_symtab_full(%rip), %rdi
+    jmp     fatal_condition
+.intern_strheap_full:
+    lea     msg_strheap_full(%rip), %rdi
+    jmp     fatal_condition
 
 /* =================================================================
  * Reader: text -> S-expression, using the global input_ptr cursor
@@ -2976,10 +3308,16 @@ read_atom:
     je      .read_atom_end
     cmp     $')', %al
     je      .read_atom_end
+    lea     tokbuf+TOKBUF_SIZE-1(%rip), %rcx
+    cmp     %rcx, %rdi
+    jae     .read_atom_too_long      /* keep room for the NUL terminator */
     movb    %al, (%rdi)
     inc     %rdi
     inc     %rsi
     jmp     .read_atom_loop
+.read_atom_too_long:
+    lea     msg_token_too_long(%rip), %rdi
+    jmp     fatal_condition
 .read_atom_end:
     movb    $0, (%rdi)
     mov     %rsi, input_ptr(%rip)
@@ -3120,6 +3458,10 @@ read_sexpr:
     call    skip_ws
     mov     input_ptr(%rip), %rdi
     movzx   (%rdi), %eax
+    cmp     $')', %al
+    je      .read_sexpr_stray_close  /* a ')' where a datum must begin */
+    test    %al, %al
+    jz      .read_sexpr_eof          /* end of input where a datum must begin */
     cmp     $'(', %al
     jne     .read_sexpr_atom
     inc     %rdi
@@ -3129,6 +3471,12 @@ read_sexpr:
 .read_sexpr_atom:
     call    read_atom
     ret
+.read_sexpr_stray_close:
+    lea     msg_unexpected_close(%rip), %rdi
+    jmp     fatal_condition
+.read_sexpr_eof:
+    lea     msg_unexpected_eof(%rip), %rdi
+    jmp     fatal_condition
 
 /* peek_dot() -> rax=1 if a standalone "." token is next (surrounded
  * by whitespace/parens/EOF on both sides, matching the printer's own
@@ -3399,10 +3747,12 @@ print_sexpr:
 
 main:
     push    %rbx
+    mov     %rsp, stack_base(%rip)   /* top of push-down list for reclaim */
     mov     %rsi, %rbx           /* argv, saved before any other call clobbers rsi */
     mov     %rdi, argc_saved(%rip)  /* argc, saved to memory (keeps push-count/stack
                                         alignment simple -- an extra register push
                                         here would need a matching pad, this doesn't) */
+    call    setup_pushdown_list      /* after argc/argv are saved: it clobbers rdi/rsi */
 
     lea     heap(%rip), %rax
     mov     %rax, heap_ptr(%rip)
@@ -3544,9 +3894,11 @@ main:
     mov     %rax, %r12
     lea     filebuf(%rip), %rdi
     mov     $1, %rsi
-    mov     $65535, %rdx
+    mov     $FILEBUF_SIZE-1, %rdx
     mov     %r12, %rcx
     call    fread
+    cmp     $FILEBUF_SIZE-1, %rax
+    jae     source_too_large         /* never silently truncate a program */
     lea     filebuf(%rip), %rdi
     movb    $0, (%rdi,%rax,1)
     mov     %r12, %rdi
@@ -3568,9 +3920,11 @@ main:
     mov     %rax, %r12           /* FILE* */
     lea     filebuf(%rip), %rdi
     mov     $1, %rsi
-    mov     $65535, %rdx
+    mov     $FILEBUF_SIZE-1, %rdx
     mov     %r12, %rcx
-    call    fread                /* rax = bytes actually read */
+    call    fread
+    cmp     $FILEBUF_SIZE-1, %rax
+    jae     source_too_large         /* never silently truncate a program */                /* rax = bytes actually read */
     lea     filebuf(%rip), %rdi
     movb    $0, (%rdi,%rax,1)    /* null-terminate the loaded text */
     mov     %r12, %rdi
@@ -3607,6 +3961,25 @@ main:
     call    printf
 
 .main_done:
+    /* Необов'язковий звіт про free storage (лише stderr, лише коли задано
+     * MCCARTHY_GC_STATS): кількість циклів reclamation, скільки регістрів
+     * повернуто в FREE останнім циклом, і ємність області. */
+    lea     env_gc_stats(%rip), %rdi
+    call    getenv
+    test    %rax, %rax
+    jz      .main_exit
+    mov     stderr(%rip), %rdi
+    lea     fmt_gc_stats(%rip), %rsi
+    mov     gc_cycles(%rip), %rdx
+    mov     gc_last_reclaimed(%rip), %rcx
+    mov     heap_ptr(%rip), %r8
+    lea     heap(%rip), %rax
+    sub     %rax, %r8
+    shr     $4, %r8
+    mov     $HEAP_CELLS, %r9
+    xor     %eax, %eax
+    call    fprintf
+.main_exit:
     pop     %rbx
     xor     %eax, %eax
     ret
