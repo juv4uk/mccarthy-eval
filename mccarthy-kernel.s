@@ -2956,7 +2956,18 @@ eval:
 .head_not_atom:
     mov     %r12, %rdi
     call    caar
+    /* Голова функції за точним SID8: історичні імена LABEL/LAMBDA
+     * переводяться в SENS-код (10101010 / 00001000), далі порівняння лише
+     * за кодом — той самий напрямок, що й resolve_core1_callable_sid. */
     cmp     $LABEL_SYM, %rax
+    jne     .hna_not_label_name
+    mov     $SID_LABEL, %rax
+.hna_not_label_name:
+    cmp     $LAMBDA_SYM, %rax
+    jne     .hna_not_lambda_name
+    mov     $SID_LAMBDA, %rax
+.hna_not_lambda_name:
+    cmp     $SID_LABEL, %rax
     jne     .try_lambda
     /* eval[cons[caddar[e];cdr[e]]; cons[cons[cadar[e];car[e]];a]]
      * (uses a dotted (name . form) binding, matching this system's
@@ -2991,7 +3002,7 @@ eval:
     jmp     .eval_done
 
 .try_lambda:
-    cmp     $LAMBDA_SYM, %rax
+    cmp     $SID_LAMBDA, %rax
     jne     .try_funarg
     mov     %r12, %rdi
     call    cdr
@@ -3679,6 +3690,7 @@ print_sexpr:
 .equ SID_COND,   30             /* 00000111 */
 .equ SID_LAMBDA, 34             /* 00001000 */
 .equ SID_DEFINE, 38             /* 00001001 */
+.equ SID_LABEL,  682            /* 10101010 — LABEL, sens function table */
 
 .equ QUOTE_SYM,  9
 .equ ATOM_SYM,   13
@@ -4007,8 +4019,11 @@ process_buffer:
     jnz     .pb_eval_plain
     mov     %rbx, %rdi
     call    car
+    cmp     $SID_DEFINE, %rax        /* DEFINE as exact SID8 00001001 */
+    je      .pb_is_define
     cmp     $DEFINE_SYM, %rax
     jne     .pb_try_array
+.pb_is_define:
 
     /* DEFINE binds name to the RAW, unevaluated form -- not eval[expr].
      * eval only recognizes LABEL/LAMBDA as the head of a call, never
