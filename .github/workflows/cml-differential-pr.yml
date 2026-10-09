@@ -1,0 +1,25 @@
+name: CML differential runner PR safety
+on:
+  pull_request:
+    paths:
+      - 'tests/cml-bridge/**'
+      - '.github/workflows/cml-differential-pr.yml'
+      - 'mccarthy-kernel.s'
+      - 'tests/historical-core/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core-and-driver-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Historical native kernel regression
+        run: bash tests/historical-core/run.sh
+      - name: Check differential runner Python syntax and CLI contract
+        run: |
+          python3 -m py_compile tests/cml-bridge/run-differential.py
+          python3 tests/cml-bridge/run-differential.py --help
+      - name: Check no source tree drift
+        run: git diff --exit-code
