@@ -1633,18 +1633,31 @@ evcon:
  * via a real segfault, not by remembering the paper. */
 appq:
     push    %r12
+    push    %r13
     mov     %rdi, %r12
     cmp     $NIL_SYM, %r12
     je      .appq_nil
     mov     %r12, %rdi
     call    car
-    mov     %rax, %rdi
+    mov     %rax, %r13          /* evaluated argument value */
+
+    /* SID8 self-evaluates. Re-inject it as the same bare SID8 value instead
+     * of manufacturing a forbidden (QUOTE SID) literal wrapper. */
+    mov     %r13, %rdi
+    call    sidp
+    test    %rax, %rax
+    jnz     .appq_expression_ready
+
+    mov     %r13, %rdi
     mov     $NIL_SYM, %rsi
     call    cons                /* (car[m]) */
     mov     $QUOTE_SYM, %rdi
     mov     %rax, %rsi
-    call    cons                /* (QUOTE car[m]) */
-    push    %rax
+    call    cons                /* (QUOTE car[m]) for non-SID data only */
+    mov     %rax, %r13
+
+.appq_expression_ready:
+    push    %r13
     mov     %r12, %rdi
     call    cdr
     mov     %rax, %rdi
@@ -1656,6 +1669,7 @@ appq:
 .appq_nil:
     mov     $NIL_SYM, %rax
 .appq_done:
+    pop     %r13
     pop     %r12
     ret
 
@@ -1780,6 +1794,17 @@ eval:
     jne     .try_function
     mov     %r12, %rdi
     call    cadr
+    mov     %rax, %r14
+    mov     %r14, %rdi
+    call    sidp
+    test    %rax, %rax
+    jnz     .quote_sid_forbidden
+    mov     %r14, %rax
+    jmp     .eval_done
+.quote_sid_forbidden:
+    /* Bare SID8 is the only function-identity representation. QUOTE may not
+     * create a second literal/wrapper spelling for that identity. */
+    mov     $NIL_SYM, %rax
     jmp     .eval_done
 
 .try_function:
