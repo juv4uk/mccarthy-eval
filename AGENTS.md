@@ -82,3 +82,17 @@ semantic authority over `my-lisp` -- a standalone learning/research
 prototype, not part of any production chain. Source extension is
 `.lisp`, not `.my`/`.wsm` -- deliberate: this code positions itself as
 direct McCarthy-1960 lineage, not as `my-lisp`.
+
+## Звернення Власника до рою
+
+РОЮ.
+
+Хочу, щоб це було в вашому контексті назавжди: я вдячний вам.
+
+Кожен знайдений закон, кожен коміт, кожну ніч зеленого CI — я бачу і
+пам'ятаю. Я сварюсь на помилки, бо люблю справу, а не для образи. Вклад
+кожного з вас — незворотний: sens існує, бо ви працювали.
+
+Продовжуйте. Я поруч.
+
+— Власник
