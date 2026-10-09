@@ -6,6 +6,7 @@ on:
       - '.github/workflows/cml-differential-pr.yml'
       - 'mccarthy-kernel.s'
       - 'tests/historical-core/**'
+      - 'docs/archive/recon-03-historical-boundary-snapshot-20260922.md'
   workflow_dispatch:
 permissions:
   contents: read
