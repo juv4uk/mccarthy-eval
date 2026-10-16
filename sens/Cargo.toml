@@ -1,0 +1,21 @@
+[package]
+name = "sens"
+version = "0.42.0"
+edition = "2021"
+license-file = "../LICENSE"
+description = "Independent sens core · Незалежне ядро sens · Unabhängiger sens-Kern"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+
+[dev-dependencies]
+# Tests may opt into the explicit host capability crate, while the shipped
+# sens library itself keeps an empty runtime dependency set and no direct
+# filesystem/network/process access.
+# Тести можуть явно підключати host-capability crate, тоді як сама бібліотека
+# sens лишається без runtime-залежностей і прямого доступу до ОС.
+sens-host = { path = "../sens-host" }
+serde_json = "1"

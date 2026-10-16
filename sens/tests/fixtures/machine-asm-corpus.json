@@ -1,0 +1,91 @@
+{
+  "schema": "sens.machine-asm-corpus/v1",
+  "producers": {
+    "gas": "GNU assembler (GNU Binutils) 2.44",
+    "nasm": "NASM version 2.15.05 compiled on Jan  1 1970",
+    "objcopy": "GNU objcopy (GNU Binutils) 2.44"
+  },
+  "corpus_sha256": "ab6fd7d9eb92009aab68992ccf088f0997182660cfb1da5c128d9fa8e6a7fc09",
+  "cases": [
+    {
+      "name": "add_rax_rcx",
+      "form": "(add-r64-r64 rax rcx)",
+      "gas": "add rax, rcx",
+      "nasm": "add rax, rcx",
+      "bytes_hex": "4801c8",
+      "sha256": "99a7d05567c9a0f0fb32bb0eba658b75d7d74441c203b23dedcf09549ff8a5f0"
+    },
+    {
+      "name": "add_r8_r9",
+      "form": "(add-r64-r64 r8 r9)",
+      "gas": "add r8, r9",
+      "nasm": "add r8, r9",
+      "bytes_hex": "4d01c8",
+      "sha256": "60dd669bc3fa5964796581bb2e5abd2438c9e5cf86720184069bf293389e5c24"
+    },
+    {
+      "name": "store_rdi_disp8_rax",
+      "form": "(mov-mem-disp8-r64 rdi 8 rax)",
+      "gas": "mov QWORD PTR [rdi + 8], rax",
+      "nasm": "mov qword [rdi + 8], rax",
+      "bytes_hex": "48894708",
+      "sha256": "752baff5249bc7fc25929a477557acd46d9525d6defa540afce4908138ec6652"
+    },
+    {
+      "name": "load_rax_rdi_disp8",
+      "form": "(mov-r64-mem-disp8 rax rdi 8)",
+      "gas": "mov rax, QWORD PTR [rdi + 8]",
+      "nasm": "mov rax, qword [rdi + 8]",
+      "bytes_hex": "488b4708",
+      "sha256": "cdce4e52402a7ee2717902dcba81ea4d0c7e863f11bf53894a0f3704bed87041"
+    },
+    {
+      "name": "store_r12_disp8_r9",
+      "form": "(mov-mem-disp8-r64 r12 8 r9)",
+      "gas": "mov QWORD PTR [r12 + 8], r9",
+      "nasm": "mov qword [r12 + 8], r9",
+      "bytes_hex": "4d894c2408",
+      "sha256": "0422c9b76580412e9771ccd351c4c50d2de0650775252232b77498b8c5a90d4c"
+    },
+    {
+      "name": "aesenc_xmm0_xmm1",
+      "form": "(aesenc-xmm-xmm xmm0 xmm1)",
+      "gas": "aesenc xmm0, xmm1",
+      "nasm": "aesenc xmm0, xmm1",
+      "bytes_hex": "660f38dcc1",
+      "sha256": "eda8d578607634a24cb85fd80a808c453dc8f9159cdd2daece93425763bb90f3"
+    },
+    {
+      "name": "aesenc_xmm8_xmm9",
+      "form": "(aesenc-xmm-xmm xmm8 xmm9)",
+      "gas": "aesenc xmm8, xmm9",
+      "nasm": "aesenc xmm8, xmm9",
+      "bytes_hex": "66450f38dcc1",
+      "sha256": "e26a55a28d359f2d3eeb26980bf9ee7dfe892d3ba094986d765994bf1adb0a0f"
+    },
+    {
+      "name": "pclmulqdq_xmm0_xmm1_11",
+      "form": "(pclmulqdq-xmm-xmm-imm8 xmm0 xmm1 17)",
+      "gas": "pclmulqdq xmm0, xmm1, 0x11",
+      "nasm": "pclmulqdq xmm0, xmm1, 0x11",
+      "bytes_hex": "660f3a44c111",
+      "sha256": "602ce2808dd69b990308e0eccaaf738d31ff72716ebe1945e12d173d2cf9e41e"
+    },
+    {
+      "name": "pclmulqdq_xmm8_xmm9_01",
+      "form": "(pclmulqdq-xmm-xmm-imm8 xmm8 xmm9 1)",
+      "gas": "pclmulqdq xmm8, xmm9, 0x01",
+      "nasm": "pclmulqdq xmm8, xmm9, 0x01",
+      "bytes_hex": "66450f3a44c101",
+      "sha256": "6fdcc870d7a9773d7de62e4b68d2d3ff5b58f6a27102c64351705d79be9af185"
+    },
+    {
+      "name": "ret",
+      "form": "(ret)",
+      "gas": "ret",
+      "nasm": "ret",
+      "bytes_hex": "c3",
+      "sha256": "ae3f4619b0413d70d3004b9131c3752153074e45725be13b9a148978895e359e"
+    }
+  ]
+}
