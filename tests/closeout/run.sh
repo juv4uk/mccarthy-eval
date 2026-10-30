@@ -76,6 +76,7 @@ echo "mccarthy-kernel SHA-256: $hash_round1"
 echo
 
 run_gate "historical-core (#9)" "tests/historical-core/run.sh"
+run_gate "historical-errata-1959 (AIM-008 SUBSQ/QUOTE mechanism witness)" "tests/historical-errata-1959/run.sh"
 run_gate "isa-baseline (#7 physical-execution criterion, static + QEMU/Conroe)" "tests/isa-baseline/check-isa-baseline.sh"
 run_gate "historical-facility-extensions (#27)" "tests/historical-facility-extensions/run.sh"
 run_gate "lisp15-library-primitives (#7 Фаза 2, Appendix A hardware primitives)" "tests/lisp15-library-primitives/run.sh"
@@ -100,6 +101,7 @@ else
   overall_fail=1
 fi
 run_gate "historical-core (round 2, output-identity check)" "tests/historical-core/run.sh"
+run_gate "historical-errata-1959 (round 2, output-identity check)" "tests/historical-errata-1959/run.sh"
 run_gate "historical-facility-extensions (round 2, output-identity check)" "tests/historical-facility-extensions/run.sh"
 run_gate "lisp15-library-primitives (round 2, output-identity check)" "tests/lisp15-library-primitives/run.sh"
 run_gate "lisp15-library-functions (round 2, output-identity check)" "tests/lisp15-library-functions/run.sh"
@@ -115,7 +117,8 @@ echo
 echo "--- Known regression witnesses covered by this closeout ---"
 echo "  #9 fixture 14-t-self-evaluates: 'T never self-evaluated' bug (README.md)"
 echo "  #9 fixture 21-appq-plain-call-list-arg: 'missing appq' bug (README.md)"
-echo "  Both adversarially verified in the PRs that introduced them (fixes reverted"
+echo "  AIM-008 errata witness: naive SUBST changes (QUOTE X) to (QUOTE A); SUBSQ preserves it"
+echo "  The two 1960 regressions were adversarially verified in their fixing PRs (fixes reverted"
 echo "  in an uncommitted scratch copy of mccarthy-kernel.s; corresponding fixtures failed)."
 echo
 

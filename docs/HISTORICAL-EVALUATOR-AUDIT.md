@@ -69,6 +69,28 @@ audit.
 | `pair` | Recursively constructs dotted `(name . value)` bindings used by `LAMBDA`. | source-supported mechanism; implementation representation |
 | `append` | Recursively prepends the generated bindings to the inherited environment. | source-supported mechanism; implementation witness |
 
+## Separate executable witness for the 1959 errata
+
+The 1959 `subst`/`subsq` issue is a different mechanism from the 1960
+named-call/`appq` issue. It now has its own focused executable witness in
+`tests/historical-errata-1959/`:
+
+| Mechanism | Observed result | Evidence status |
+|---|---|---|
+| Naive `SUBST` descends into `(QUOTE X)` while substituting `X → A` | produces `(QUOTE A)`; evaluating that form returns `A` | executable mechanism witness, AIM-008 errata source-confirmed |
+| Errata `SUBSQ` stops at a `QUOTE` head | preserves `(QUOTE X)`; evaluating that form returns `X` | executable mechanism witness, AIM-008 errata source-confirmed |
+
+The harness runs the current kernel twice: first to execute the substitution
+mechanism, then to evaluate the resulting form. This isolates and demonstrates
+the code/data boundary failure without claiming that the 1960 kernel is a
+complete 1959 evaluator. The source transcription and provenance are in
+`docs/correspondence/aim-008-1959-full-scan-eval-apply-2026-09-22.md` and
+`tests/historical-errata-1959/PROVENANCE.md`.
+
+The 1960 `appq` counterexample remains separately covered by
+`tests/historical-core/21-appq-plain-call-list-arg.lisp`; it must not be
+merged with the 1959 substitution witness.
+
 ## Known deviations and their classification
 
 ### 1. `evcon[NIL;a]` returns `NIL`
