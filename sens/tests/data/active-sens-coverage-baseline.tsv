@@ -1,6 +1,0 @@
-# #1673 active SENS coverage ratchet
-# view	files_observed	named_max	sens_observed	total_observed	basis_points_min
-# Initial evidence: current main dcaeb0fc + PR #1674 CI.
-repository-source	339	3888	28277	32165	8791
-active-lib	66	6	16224	16230	9996
-runtime-embedded	10	0	2796	2796	10000
