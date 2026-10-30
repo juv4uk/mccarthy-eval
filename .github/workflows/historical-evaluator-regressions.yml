@@ -1,0 +1,37 @@
+name: Історичні регресії evaluator 1959–1960
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/historical-evaluator-regressions.yml'
+      - 'mccarthy-kernel.s'
+      - 'startup.lisp'
+      - 'tests/historical-core/**'
+      - 'tests/historical-errata-1959/**'
+      - 'tests/closeout/run.sh'
+      - 'docs/HISTORICAL-EVALUATOR-AUDIT.md'
+  pull_request:
+    paths:
+      - '.github/workflows/historical-evaluator-regressions.yml'
+      - 'mccarthy-kernel.s'
+      - 'startup.lisp'
+      - 'tests/historical-core/**'
+      - 'tests/historical-errata-1959/**'
+      - 'tests/closeout/run.sh'
+      - 'docs/HISTORICAL-EVALUATOR-AUDIT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  historical-evaluator-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Побудувати ядро й перевірити еррату AIM-008 1959 року
+        run: bash tests/historical-errata-1959/run.sh
+      - name: Перевірити корпус опублікованого evaluator 1960 року
+        run: bash tests/historical-core/run.sh
