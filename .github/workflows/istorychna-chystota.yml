@@ -1,4 +1,4 @@
-name: Історична реконструкція — без Rust
+name: Історична реконструкція — без сторонньої копії SENS
 
 on:
   pull_request:
@@ -20,15 +20,20 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Переконатися у відсутності Rust та його копій
+      - name: Переконатися у відсутності копії SENS та Rust-runtime
         shell: bash
         run: |
           set -euo pipefail
-          if git ls-files | grep -E '(^sens/|^host/|\.rs$|(^|/)Cargo\.(toml|lock)$)'; then
-            echo 'Знайдено сторонні Rust-файли або каталоги.'
+          if git ls-files | grep -E '(^sens/|^host/|(^|/)Cargo\.(toml|lock)$)'; then
+            echo 'Знайдено сторонню копію SENS, host або Cargo manifest.'
+            exit 1
+          fi
+          if git ls-files | grep -E '\.rs$' | grep -v -x 'tests/cml-bridge/cml-witness-driver.rs'; then
+            echo 'Знайдено неузгоджений Rust-файл поза історичним CML-драйвером.'
             exit 1
           fi
           test ! -e sens
           test ! -e host
+          test -f tests/cml-bridge/cml-witness-driver.rs
       - name: Виконати історичні перевірки Маккарті
         run: bash tests/historical-core/run.sh
