@@ -49,6 +49,32 @@ jobs:
           done
           echo "КІЛЬКІСТЬ-НЕУСПІШНИХ-КОРПУСІВ $failed"
           test "$failed" -eq 0
+      - name: Незалежні еталони з формул McCarthy 1960 (не з локальних fixtures)
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_primary() {
+            local label="$1" expected="$2" expr="$3"
+            printf '%s\n' "$expr" > /tmp/istor-prim.lisp
+            local actual
+            actual="$(timeout 5s ./mccarthy-kernel /tmp/istor-prim.lisp)"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "ПЕРШОДЖЕРЕЛО-НЕЗБІГ [$label]: expected=$expected actual=$actual"
+              return 1
+            fi
+            echo "ПЕРШОДЖЕРЕЛО-ПРОЙДЕНО [$label]: $actual"
+          }
+          # McCarthy 1960, p.16: apply (LAMBDA (X Y) (CONS (CAR X) Y))
+          check_primary "apply-lambda-p16" "(A C D)" \
+            '((LAMBDA (X Y) (CONS (CAR X) Y)) (QUOTE (A B)) (QUOTE (C D)))'
+          # McCarthy 1960, pp.19-20: recursive ff = first atom from ((A . B))
+          check_primary "label-ff-p19" "A" \
+            '((LABEL FF (LAMBDA (X) (COND ((ATOM X) X) ((QUOTE T) (FF (CAR X)))))) (QUOTE (A . B)))'
+          # Five primitive constructs with outcomes directly stated in the 1960 paper
+          check_primary "eq-atoms-p10" "T" '(EQ (QUOTE A) (QUOTE A))'
+          check_primary "cons-pair-p10" "(A . B)" '(CONS (QUOTE A) (QUOTE B))'
+          check_primary "atom-atom-p10" "T" '(ATOM (QUOTE A))'
+          echo "ПЕРШОДЖЕРЕЛО: 5/5 прикладів успішно; інші форми залишаються недоведеними."
       - name: Задокументувати виконання на невизначених формах McCarthy 1960
         shell: bash
         run: |
