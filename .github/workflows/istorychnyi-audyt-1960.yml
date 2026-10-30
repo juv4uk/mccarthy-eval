@@ -1,0 +1,73 @@
+name: Незалежний аудит історичних виконуваних корпусів
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/istorychnyi-audyt-1960.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  istorychnyi-audyt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - name: Контроль відсутності стороннього Rust-ядра
+        run: |
+          test ! -e sens
+          test -f mccarthy-kernel.s
+      - name: Побудова справжнього асемблерного ядра
+        run: gcc -no-pie -O0 -s -o mccarthy-kernel mccarthy-kernel.s
+      - name: Незалежний регресійний прогін історичних і пізніших корпусів
+        shell: bash
+        run: |
+          set -uo pipefail
+          failed=0
+          for suite in \
+            tests/historical-core/run.sh \
+            tests/historical-facility-extensions/run.sh \
+            tests/lisp15-library-primitives/run.sh \
+            tests/lisp15-library-functions/run.sh \
+            tests/appendix-b-funarg/run.sh \
+            tests/appendix-b-prog/run.sh \
+            tests/appendix-b-proplists/run.sh \
+            tests/array-feature/run.sh \
+            tests/reader-dotted-pairs/run.sh \
+            tests/repl-diagnostics/run.sh \
+            tests/historical-reclamation/run.sh; do
+              printf '\n===== %s =====\n' "$suite"
+              if timeout 110s bash "$suite"; then
+                echo "АУДИТ-ПРОЙДЕНО $suite"
+              else
+                code=$?
+                echo "АУДИТ-ПОМИЛКА $suite код=$code"
+                failed=$((failed+1))
+              fi
+          done
+          echo "КІЛЬКІСТЬ-НЕУСПІШНИХ-КОРПУСІВ $failed"
+          test "$failed" -eq 0
+      - name: Задокументувати виконання на невизначених формах McCarthy 1960
+        shell: bash
+        run: |
+          set -uo pipefail
+          cases=(
+            '(COND ((QUOTE NIL) (QUOTE A)))'
+            '(CAR (QUOTE A))'
+            '(CDR (QUOTE A))'
+            '(EQ (QUOTE (A)) (QUOTE (A)))'
+            'UNKNOWN_ATOM_1960'
+            '(UNKNOWN_FN_1960 (QUOTE A))'
+          )
+          for code in "${cases[@]}"; do
+            echo "=== ВХІД: $code ==="
+            printf '%s\n' "$code" >/tmp/audit-1960.lisp
+            timeout 5s ./mccarthy-kernel /tmp/audit-1960.lisp >/tmp/audit-1960.out 2>/tmp/audit-1960.err
+            result=$?
+            echo "КОД ВИХОДУ: $result"
+            printf 'STDOUT: '; cat /tmp/audit-1960.out
+            printf 'STDERR: '; cat /tmp/audit-1960.err
+          done
+          echo 'Спостережені результати не означають історичної відповідності.'
